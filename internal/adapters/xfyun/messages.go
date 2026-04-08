@@ -72,9 +72,10 @@ type responseResult struct {
 }
 
 type decodedResult struct {
-	SN int               `json:"sn"`
-	LS bool              `json:"ls"`
-	WS []decodedWordSlot `json:"ws"`
+	SN  int               `json:"sn"`
+	LS  bool              `json:"ls"`
+	RST string            `json:"rst,omitempty"`
+	WS  []decodedWordSlot `json:"ws"`
 }
 
 type decodedWordSlot struct {

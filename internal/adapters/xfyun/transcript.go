@@ -3,7 +3,8 @@ package xfyun
 import "strings"
 
 type transcriptAccumulator struct {
-	parts map[int]string
+	committed string
+	parts     map[int]string
 }
 
 func newTranscriptAccumulator() *transcriptAccumulator {
@@ -15,20 +16,46 @@ func newTranscriptAccumulator() *transcriptAccumulator {
 func (a *transcriptAccumulator) Apply(decoded decodedResult, result responseResult) string {
 	text := flattenDecodedText(decoded)
 
-	switch result.PGS {
-	case "rpl":
-		if len(result.RG) == 2 {
-			for i := result.RG[0]; i <= result.RG[1]; i++ {
-				delete(a.parts, i)
+	var current string
+
+	if result.PGS == "" {
+		switch decoded.RST {
+		case "pgs":
+			a.parts = map[int]string{
+				decoded.SN: text,
 			}
+			current = text
+		case "rlt":
+			a.parts = make(map[int]string)
+			a.committed += text
+			return a.committed
+		default:
+			a.parts = map[int]string{
+				decoded.SN: text,
+			}
+			current = text
 		}
-		a.parts[decoded.SN] = text
-	default:
-		a.parts[decoded.SN] = text
+	} else {
+		switch result.PGS {
+		case "rpl":
+			if len(result.RG) == 2 {
+				for i := result.RG[0]; i <= result.RG[1]; i++ {
+					delete(a.parts, i)
+				}
+			}
+			a.parts[decoded.SN] = text
+		default:
+			a.parts[decoded.SN] = text
+		}
+		current = assembleParts(a.parts)
 	}
 
+	return a.committed + current
+}
+
+func assembleParts(parts map[int]string) string {
 	maxSN := 0
-	for sn := range a.parts {
+	for sn := range parts {
 		if sn > maxSN {
 			maxSN = sn
 		}
@@ -36,7 +63,7 @@ func (a *transcriptAccumulator) Apply(decoded decodedResult, result responseResu
 
 	var builder strings.Builder
 	for i := 1; i <= maxSN; i++ {
-		builder.WriteString(a.parts[i])
+		builder.WriteString(parts[i])
 	}
 	return builder.String()
 }

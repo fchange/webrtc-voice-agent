@@ -29,6 +29,9 @@ type asrRuntime struct {
 	currentTurn int64
 	sequence    uint64
 	sentSamples uint64
+	chunkCount  uint64
+	byteCount   uint64
+	startedAt   time.Time
 }
 
 func newASRRuntime(
@@ -99,7 +102,18 @@ func (r *asrRuntime) HandleSpeechStart() {
 	r.currentTurn = turnID
 	r.sequence = 0
 	r.sentSamples = 0
+	r.chunkCount = 0
+	r.byteCount = 0
+	r.startedAt = time.Now().UTC()
 	r.mu.Unlock()
+
+	r.logger.Info(
+		"asr turn started",
+		"session_id", r.sessionID,
+		"turn_id", turnID,
+		"provider", r.provider.Name(),
+		"sample_rate", r.targetSampleRate,
+	)
 
 	go r.forwardEvents(turnID, input, cancel, events)
 }
@@ -107,14 +121,32 @@ func (r *asrRuntime) HandleSpeechStart() {
 func (r *asrRuntime) HandleEndOfUtterance() {
 	r.mu.Lock()
 	input := r.input
+	turnID := r.currentTurn
+	chunkCount := r.chunkCount
+	byteCount := r.byteCount
+	sentSamples := r.sentSamples
+	startedAt := r.startedAt
 	r.input = nil
 	r.cancel = nil
 	r.currentTurn = 0
 	r.sequence = 0
 	r.sentSamples = 0
+	r.chunkCount = 0
+	r.byteCount = 0
+	r.startedAt = time.Time{}
 	r.mu.Unlock()
 
 	if input != nil {
+		r.logger.Info(
+			"asr turn input closed",
+			"session_id", r.sessionID,
+			"turn_id", turnID,
+			"provider", r.provider.Name(),
+			"chunks", chunkCount,
+			"bytes", byteCount,
+			"samples", sentSamples,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+		)
 		close(input)
 	}
 }
@@ -128,6 +160,9 @@ func (r *asrRuntime) Close() {
 	r.currentTurn = 0
 	r.sequence = 0
 	r.sentSamples = 0
+	r.chunkCount = 0
+	r.byteCount = 0
+	r.startedAt = time.Time{}
 	r.mu.Unlock()
 
 	if input != nil {
@@ -163,8 +198,20 @@ func (r *asrRuntime) consumeFrame(frame audio.PCMFrame) {
 
 	select {
 	case r.input <- chunk:
+		if r.chunkCount == 0 {
+			r.logger.Info(
+				"asr first pcm chunk queued",
+				"session_id", r.sessionID,
+				"turn_id", r.currentTurn,
+				"provider", r.provider.Name(),
+				"bytes", len(chunk.PCM),
+				"timestamp_ms", chunk.Timestamp.Milliseconds(),
+			)
+		}
 		r.sequence++
 		r.sentSamples += uint64(len(normalized.Samples))
+		r.chunkCount++
+		r.byteCount += uint64(len(chunk.PCM))
 	case <-time.After(10 * time.Millisecond):
 		r.logger.Warn("dropping pcm chunk for asr", "session_id", r.sessionID, "turn_id", r.currentTurn, "provider", r.provider.Name(), "chunk_duration", chunkDuration.String())
 	}
@@ -178,6 +225,15 @@ func (r *asrRuntime) forwardEvents(
 ) {
 	defer cancel()
 	for event := range events {
+		r.logger.Info(
+			"asr event received",
+			"session_id", r.sessionID,
+			"turn_id", turnID,
+			"provider", r.provider.Name(),
+			"final", event.Final,
+			"text_len", len(event.Text),
+			"text", event.Text,
+		)
 		r.emitter.emitASREvent(r.sessionID, turnID, event)
 	}
 
@@ -188,6 +244,9 @@ func (r *asrRuntime) forwardEvents(
 		r.currentTurn = 0
 		r.sequence = 0
 		r.sentSamples = 0
+		r.chunkCount = 0
+		r.byteCount = 0
+		r.startedAt = time.Time{}
 	}
 	r.mu.Unlock()
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createDefaultClientConfig, SignalingClient } from '../features/signaling/signaling-client';
-import { VoiceSessionController } from '../features/webrtc/voice-session';
+import { type LocalSessionSource, VoiceSessionController } from '../features/webrtc/voice-session';
 
 type TimelineItem = {
   id: number;
@@ -32,7 +32,7 @@ export function App() {
     setTimeline((items) => [{ id, label }, ...items]);
   }
 
-  async function createSession() {
+  async function startSession(localSource?: LocalSessionSource) {
     setStatus('creating_session');
 
     try {
@@ -57,12 +57,24 @@ export function App() {
             remoteAudioRef.current.srcObject = stream;
           }
         },
-      });
+      }, localSource);
       appendTimeline(`Session created: ${session.session_id}`);
     } catch (error) {
+      if (localSource?.stop) {
+        await localSource.stop();
+      }
       setStatus('error');
       appendTimeline(`Create session failed: ${(error as Error).message}`);
     }
+  }
+
+  async function createSession() {
+    await startSession();
+  }
+
+  async function createDemoSession() {
+    const demoSource = await controller.prepareDemoSource('/demo.wav');
+    await startSession(demoSource);
   }
 
   function interrupt() {
@@ -114,6 +126,7 @@ export function App() {
 
           <div className="actions">
             <button onClick={createSession}>Create Session</button>
+            <button onClick={createDemoSession}>Create Demo Session</button>
             <button onClick={interrupt} disabled={!sessionId}>
               Interrupt
             </button>
@@ -128,7 +141,7 @@ export function App() {
           <ul className="stack">
             <li>`signaling-client.ts` owns session bootstrap and protocol transport.</li>
             <li>`voice-session.ts` owns media capture, PeerConnection, signaling apply, and interrupt/end semantics.</li>
-            <li>Bot currently negotiates WebRTC and receives upstream audio; downstream bot speech comes next.</li>
+            <li>Demo mode can inject `/demo.wav` into the upstream WebRTC track without using the microphone.</li>
           </ul>
         </article>
       </section>

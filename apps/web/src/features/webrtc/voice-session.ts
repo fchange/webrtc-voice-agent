@@ -7,17 +7,65 @@ import {
 } from '../protocol/messages';
 import { SignalingClient } from '../signaling/signaling-client';
 
+export type LocalSessionSource = {
+  stream: MediaStream;
+  start?: () => Promise<void> | void;
+  stop?: () => Promise<void> | void;
+};
+
 export class VoiceSessionController {
   private socket: WebSocket | null = null;
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private controlChannel: RTCDataChannel | null = null;
   private pendingRemoteICE: RTCIceCandidateInit[] = [];
+  private localSourceStop: (() => Promise<void> | void) | null = null;
 
   constructor(private readonly signaling: SignalingClient) {}
 
   async bootstrap() {
     return this.signaling.createSession();
+  }
+
+  async prepareDemoSource(demoURL: string): Promise<LocalSessionSource> {
+    const audioContext = new AudioContext();
+    await audioContext.resume();
+
+    const response = await fetch(demoURL);
+    if (!response.ok) {
+      await audioContext.close();
+      throw new Error(`failed to load demo audio: ${response.status}`);
+    }
+
+    const audioBuffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+    const destination = audioContext.createMediaStreamDestination();
+    const gainNode = audioContext.createGain();
+    gainNode.gain.value = 1;
+    gainNode.connect(destination);
+    gainNode.connect(audioContext.destination);
+
+    let sourceNode: AudioBufferSourceNode | null = null;
+
+    return {
+      stream: destination.stream,
+      start: async () => {
+        if (sourceNode !== null) {
+          return;
+        }
+        sourceNode = audioContext.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.connect(gainNode);
+        sourceNode.start();
+      },
+      stop: async () => {
+        if (sourceNode !== null) {
+          sourceNode.stop();
+          sourceNode.disconnect();
+          sourceNode = null;
+        }
+        await audioContext.close();
+      },
+    };
   }
 
   async connect(
@@ -26,16 +74,12 @@ export class VoiceSessionController {
       onEvent: (message: string) => void;
       onRemoteStream?: (stream: MediaStream) => void;
     },
+    localSource?: LocalSessionSource,
   ) {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
-    });
+    const source = localSource ?? (await this.getMicrophoneSource());
+    const stream = source.stream;
     this.localStream = stream;
+    this.localSourceStop = source.stop ?? null;
 
     const peer = new RTCPeerConnection({
       iceServers: session.ice_urls.map((url) => ({ urls: url })),
@@ -98,6 +142,10 @@ export class VoiceSessionController {
             },
           });
           handlers.onEvent('Local offer sent.');
+          if (source.start) {
+            await source.start();
+            handlers.onEvent('Local source playback started.');
+          }
         },
         onClose: () => {
           handlers.onEvent('WebSocket signaling closed.');
@@ -188,6 +236,10 @@ export class VoiceSessionController {
   }
 
   close() {
+    if (this.localSourceStop) {
+      void this.localSourceStop();
+      this.localSourceStop = null;
+    }
     this.controlChannel?.close();
     this.controlChannel = null;
     this.peerConnection?.close();
@@ -197,5 +249,18 @@ export class VoiceSessionController {
     this.localStream?.getTracks().forEach((track) => track.stop());
     this.localStream = null;
     this.pendingRemoteICE = [];
+  }
+
+  private async getMicrophoneSource(): Promise<LocalSessionSource> {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+
+    return { stream };
   }
 }

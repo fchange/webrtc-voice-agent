@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -18,13 +19,18 @@ type ASR struct {
 	cfg    config.XFYUNASRConfig
 	dialer *websocket.Dialer
 	clock  func() time.Time
+	logger *slog.Logger
 }
 
-func NewASR(cfg config.XFYUNASRConfig) *ASR {
+func NewASR(cfg config.XFYUNASRConfig, logger *slog.Logger) *ASR {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &ASR{
 		cfg:    cfg,
 		dialer: websocket.DefaultDialer,
 		clock:  time.Now,
+		logger: logger.With("provider", "xfyun-spark-iat"),
 	}
 }
 
@@ -54,6 +60,15 @@ func (a *ASR) Transcribe(ctx context.Context, input <-chan adapters.AudioChunk) 
 		return nil, fmt.Errorf("dial xfyun asr: %w", err)
 	}
 
+	a.logger.Info(
+		"xfyun asr websocket connected",
+		"url", a.cfg.WSURL,
+		"domain", a.cfg.Domain,
+		"language", a.cfg.Language,
+		"sample_rate", a.cfg.SampleRate,
+		"encoding", a.cfg.AudioEncoding,
+	)
+
 	out := make(chan adapters.ASREvent, 16)
 	go a.runSession(ctx, conn, input, out)
 	return out, nil
@@ -62,6 +77,8 @@ func (a *ASR) Transcribe(ctx context.Context, input <-chan adapters.AudioChunk) 
 func (a *ASR) runSession(ctx context.Context, conn *websocket.Conn, input <-chan adapters.AudioChunk, out chan<- adapters.ASREvent) {
 	defer close(out)
 	defer conn.Close()
+
+	const finalResponseTimeout = 5 * time.Second
 
 	var once sync.Once
 	closeWithReason := func() {
@@ -82,19 +99,63 @@ func (a *ASR) runSession(ctx context.Context, conn *websocket.Conn, input <-chan
 		sendErr <- a.sendLoop(ctx, conn, input)
 	}()
 
-	select {
-	case <-ctx.Done():
-		closeWithReason()
-	case <-sendErr:
-		closeWithReason()
-	case <-recvErr:
-		closeWithReason()
+	var finalWait *time.Timer
+	stopFinalWait := func() {
+		if finalWait == nil {
+			return
+		}
+		if !finalWait.Stop() {
+			select {
+			case <-finalWait.C:
+			default:
+			}
+		}
+	}
+	defer stopFinalWait()
+
+	for {
+		var finalWaitC <-chan time.Time
+		if finalWait != nil {
+			finalWaitC = finalWait.C
+		}
+
+		select {
+		case <-ctx.Done():
+			a.logger.Info("xfyun asr session cancelled", "err", ctx.Err())
+			closeWithReason()
+			return
+		case err := <-sendErr:
+			sendErr = nil
+			if err != nil {
+				a.logger.Info("xfyun asr send loop finished", "err", err)
+				closeWithReason()
+				return
+			}
+
+			a.logger.Info("xfyun asr send loop finished", "waiting_for_final_response", true)
+			stopFinalWait()
+			finalWait = time.NewTimer(finalResponseTimeout)
+		case err := <-recvErr:
+			if err != nil {
+				a.logger.Info("xfyun asr recv loop finished", "err", err)
+			} else {
+				a.logger.Info("xfyun asr recv loop finished")
+			}
+			closeWithReason()
+			return
+		case <-finalWaitC:
+			a.logger.Warn("xfyun asr final response timeout", "timeout_ms", finalResponseTimeout.Milliseconds())
+			closeWithReason()
+			return
+		}
 	}
 }
 
 func (a *ASR) sendLoop(ctx context.Context, conn *websocket.Conn, input <-chan adapters.AudioChunk) error {
 	seq := 1
 	first := true
+	chunkCount := 0
+	byteCount := 0
 
 	for {
 		select {
@@ -102,6 +163,7 @@ func (a *ASR) sendLoop(ctx context.Context, conn *websocket.Conn, input <-chan a
 			return ctx.Err()
 		case chunk, ok := <-input:
 			if !ok {
+				a.logger.Info("xfyun asr sending final frame", "chunks", chunkCount, "bytes", byteCount, "seq", seq)
 				return conn.WriteJSON(newAudioRequest(a.cfg, seq, 2, nil, first))
 			}
 
@@ -109,11 +171,16 @@ func (a *ASR) sendLoop(ctx context.Context, conn *websocket.Conn, input <-chan a
 			if first {
 				status = 0
 			}
+			if first {
+				a.logger.Info("xfyun asr sending first frame", "seq", seq, "bytes", len(chunk.PCM), "timestamp_ms", chunk.Timestamp.Milliseconds())
+			}
 			if err := conn.WriteJSON(newAudioRequest(a.cfg, seq, status, chunk.PCM, first)); err != nil {
 				return err
 			}
 			first = false
 			seq++
+			chunkCount++
+			byteCount += len(chunk.PCM)
 		}
 	}
 }
@@ -130,11 +197,21 @@ func (a *ASR) recvLoop(ctx context.Context, conn *websocket.Conn, accumulator *t
 		if err := conn.ReadJSON(&response); err != nil {
 			return err
 		}
+		a.logger.Info(
+			"xfyun asr response received",
+			"sid", response.Header.Sid,
+			"code", response.Header.Code,
+			"status", response.Header.Status,
+			"result_status", response.Payload.Result.Status,
+			"result_seq", response.Payload.Result.Seq,
+			"has_text", response.Payload.Result.Text != "",
+		)
 		if response.Header.Code != 0 {
 			return fmt.Errorf("xfyun code=%d message=%s", response.Header.Code, response.Header.Message)
 		}
 		if response.Payload.Result.Text == "" {
 			if response.Header.Status == 2 {
+				a.logger.Info("xfyun asr final response arrived without transcript text", "sid", response.Header.Sid)
 				return nil
 			}
 			continue
@@ -145,6 +222,19 @@ func (a *ASR) recvLoop(ctx context.Context, conn *websocket.Conn, accumulator *t
 			return err
 		}
 		text := accumulator.Apply(decoded, response.Payload.Result)
+		a.logger.Info(
+			"xfyun asr transcript decoded",
+			"sid", response.Header.Sid,
+			"sn", decoded.SN,
+			"ls", decoded.LS,
+			"rst", decoded.RST,
+			"pgs", response.Payload.Result.PGS,
+			"rg", response.Payload.Result.RG,
+			"result_seq", response.Payload.Result.Seq,
+			"final", decoded.LS || response.Header.Status == 2 || response.Payload.Result.Status == 2,
+			"text_len", len(text),
+			"text", text,
+		)
 		out <- adapters.ASREvent{
 			Text:  text,
 			Final: decoded.LS || response.Header.Status == 2 || response.Payload.Result.Status == 2,

@@ -35,7 +35,7 @@ func main() {
 
 func selectASRProvider(cfg config.BotConfig) adapters.ASRAdapter {
 	if cfg.ASR.Provider == "xfyun-spark-iat" {
-		provider := xfyun.NewASR(cfg.ASR.XFYUN)
+		provider := xfyun.NewASR(cfg.ASR.XFYUN, logging.New("xfyun-asr"))
 		if provider.Ready() {
 			return provider
 		}
