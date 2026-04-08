@@ -1,0 +1,134 @@
+:root {
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  color: #132130;
+  background:
+    radial-gradient(circle at top right, rgba(244, 207, 87, 0.55), transparent 24rem),
+    linear-gradient(180deg, #f6efe1 0%, #f2f0eb 48%, #dce7ea 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.8rem 1.1rem;
+  background: #132130;
+  color: #f7f3ea;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.shell {
+  width: min(1080px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 4rem;
+}
+
+.hero {
+  margin-bottom: 1.75rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #7c5b20;
+  font-size: 0.8rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.6rem, 8vw, 4.8rem);
+  line-height: 0.95;
+  max-width: 12ch;
+}
+
+.lede {
+  max-width: 58rem;
+  margin-top: 1rem;
+  color: #314557;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card {
+  padding: 1.25rem;
+  border: 1px solid rgba(19, 33, 48, 0.08);
+  border-radius: 1.5rem;
+  background: rgba(255, 251, 245, 0.78);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 60px rgba(19, 33, 48, 0.08);
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+.meta {
+  margin: 0 0 1rem;
+}
+
+.meta div {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+}
+
+.meta dt {
+  color: #6d7a87;
+}
+
+.meta dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.stack,
+.timeline {
+  margin: 0;
+  padding-left: 1.1rem;
+  line-height: 1.7;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(100% - 1rem, 1080px);
+    padding-top: 1.5rem;
+  }
+
+  .hero h1 {
+    max-width: 100%;
+  }
+
+  .meta div {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+}
+
