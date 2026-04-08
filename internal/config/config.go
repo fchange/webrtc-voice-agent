@@ -23,6 +23,8 @@ type BotConfig struct {
 	SignalToken  string
 	VAD          VADConfig
 	ASR          ASRConfig
+	LLM          LLMConfig
+	TTS          TTSConfig
 }
 
 type VADConfig struct {
@@ -37,6 +39,55 @@ type VADConfig struct {
 type ASRConfig struct {
 	Provider string
 	XFYUN    XFYUNASRConfig
+}
+
+type LLMConfig struct {
+	Provider     string
+	Segmenter    LLMSegmenterConfig
+	OpenAICompat OpenAICompatibleLLMConfig
+}
+
+type LLMSegmenterConfig struct {
+	Mode        string
+	Punctuation string
+}
+
+type OpenAICompatibleLLMConfig struct {
+	BaseURL         string
+	APIKey          string
+	Model           string
+	SystemPrompt    string
+	MaxTokens       int
+	Temperature     float64
+	TopP            float64
+	TopK            int
+	FailoverEnabled bool
+	Timeout         time.Duration
+}
+
+type TTSConfig struct {
+	Provider string
+	XFYUN    XFYUNTTSConfig
+}
+
+type XFYUNTTSConfig struct {
+	WSURL         string
+	Host          string
+	RequestPath   string
+	AppID         string
+	APIKey        string
+	APISecret     string
+	Voice         string
+	TextEncoding  string
+	AudioEncoding string
+	AudioFormat   string
+	PCMEndian     string
+	SampleRate    int
+	Speed         int
+	Volume        int
+	Pitch         int
+	Background    int
+	DebugDumpDir  string
 }
 
 type XFYUNASRConfig struct {
@@ -99,6 +150,47 @@ func LoadBotConfig() BotConfig {
 				DWA:           getEnv("ASR_XFYUN_DWA", "wpgs"),
 			},
 		},
+		LLM: LLMConfig{
+			Provider: getEnv("LLM_PROVIDER", "mock"),
+			Segmenter: LLMSegmenterConfig{
+				Mode:        getEnv("LLM_SEGMENTER_MODE", "punctuation_boundary"),
+				Punctuation: getEnv("LLM_SEGMENTER_PUNCTUATION", "。！？；!?;"),
+			},
+			OpenAICompat: OpenAICompatibleLLMConfig{
+				BaseURL:         getEnv("LLM_OPENAI_COMPAT_BASE_URL", "https://ai.gitee.com/v1/chat/completions"),
+				APIKey:          getEnv("LLM_OPENAI_COMPAT_API_KEY", ""),
+				Model:           getEnv("LLM_OPENAI_COMPAT_MODEL", "Qwen2-7B-Instruct"),
+				SystemPrompt:    getEnv("LLM_OPENAI_COMPAT_SYSTEM_PROMPT", "You are a concise and helpful Chinese voice assistant."),
+				MaxTokens:       getInt("LLM_OPENAI_COMPAT_MAX_TOKENS", 512),
+				Temperature:     getFloat("LLM_OPENAI_COMPAT_TEMPERATURE", 0.7),
+				TopP:            getFloat("LLM_OPENAI_COMPAT_TOP_P", 0.7),
+				TopK:            getInt("LLM_OPENAI_COMPAT_TOP_K", 50),
+				FailoverEnabled: getBool("LLM_OPENAI_COMPAT_FAILOVER_ENABLED", true),
+				Timeout:         getDuration("LLM_OPENAI_COMPAT_TIMEOUT", 45*time.Second),
+			},
+		},
+		TTS: TTSConfig{
+			Provider: getEnv("TTS_PROVIDER", "mock"),
+			XFYUN: XFYUNTTSConfig{
+				WSURL:         getEnv("TTS_XFYUN_WS_URL", "wss://tts-api.xfyun.cn/v2/tts"),
+				Host:          getEnv("TTS_XFYUN_HOST", "tts-api.xfyun.cn"),
+				RequestPath:   getEnv("TTS_XFYUN_REQUEST_PATH", "/v2/tts"),
+				AppID:         getEnv("TTS_XFYUN_APP_ID", ""),
+				APIKey:        getEnv("TTS_XFYUN_API_KEY", ""),
+				APISecret:     getEnv("TTS_XFYUN_API_SECRET", ""),
+				Voice:         getEnv("TTS_XFYUN_VOICE", "xiaoyan"),
+				TextEncoding:  getEnv("TTS_XFYUN_TEXT_ENCODING", "utf8"),
+				AudioEncoding: getEnv("TTS_XFYUN_AUDIO_ENCODING", "raw"),
+				AudioFormat:   getEnv("TTS_XFYUN_AUDIO_FORMAT", "audio/L16;rate=16000"),
+				PCMEndian:     getEnv("TTS_XFYUN_PCM_ENDIAN", "little"),
+				SampleRate:    getInt("TTS_XFYUN_SAMPLE_RATE", 16000),
+				Speed:         getInt("TTS_XFYUN_SPEED", 50),
+				Volume:        getInt("TTS_XFYUN_VOLUME", 50),
+				Pitch:         getInt("TTS_XFYUN_PITCH", 50),
+				Background:    getInt("TTS_XFYUN_BACKGROUND", 0),
+				DebugDumpDir:  getEnv("TTS_DEBUG_DUMP_DIR", ""),
+			},
+		},
 	}
 }
 
@@ -124,6 +216,28 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 func getInt(key string, fallback int) int {
 	if value, ok := os.LookupEnv(key); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
+		if err == nil {
+			return parsed
+		}
+	}
+
+	return fallback
+}
+
+func getFloat(key string, fallback float64) float64 {
+	if value, ok := os.LookupEnv(key); ok && value != "" {
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err == nil {
+			return parsed
+		}
+	}
+
+	return fallback
+}
+
+func getBool(key string, fallback bool) bool {
+	if value, ok := os.LookupEnv(key); ok && value != "" {
+		parsed, err := strconv.ParseBool(value)
 		if err == nil {
 			return parsed
 		}

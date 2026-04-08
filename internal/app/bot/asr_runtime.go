@@ -15,12 +15,17 @@ type transcriptEmitter interface {
 	emitASREvent(sessionID string, turnID int64, event adapters.ASREvent)
 }
 
+type asrEventHandler interface {
+	HandleASREvent(turnID int64, event adapters.ASREvent)
+}
+
 type asrRuntime struct {
 	sessionID        string
 	targetSampleRate uint32
 	manager          *session.Manager
 	provider         adapters.ASRAdapter
 	emitter          transcriptEmitter
+	handler          asrEventHandler
 	logger           *slog.Logger
 
 	mu          sync.Mutex
@@ -39,6 +44,7 @@ func newASRRuntime(
 	manager *session.Manager,
 	provider adapters.ASRAdapter,
 	emitter transcriptEmitter,
+	handler asrEventHandler,
 	targetSampleRate uint32,
 	logger *slog.Logger,
 ) *asrRuntime {
@@ -48,6 +54,7 @@ func newASRRuntime(
 		manager:          manager,
 		provider:         provider,
 		emitter:          emitter,
+		handler:          handler,
 		logger:           logger,
 	}
 }
@@ -235,6 +242,9 @@ func (r *asrRuntime) forwardEvents(
 			"text", event.Text,
 		)
 		r.emitter.emitASREvent(r.sessionID, turnID, event)
+		if r.handler != nil {
+			r.handler.HandleASREvent(turnID, event)
+		}
 	}
 
 	r.mu.Lock()

@@ -45,7 +45,7 @@ func TestControlRuntimeInterruptHintPromotesInterrupt(t *testing.T) {
 	}
 }
 
-func TestControlRuntimeVADLifecycleCompletesTurn(t *testing.T) {
+func TestControlRuntimeVADLifecycleLeavesTurnOpenForResponsePipeline(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	task := manager.Create("sess_1")
 	if err := task.BeginNegotiation(); err != nil {
@@ -67,7 +67,7 @@ func TestControlRuntimeVADLifecycleCompletesTurn(t *testing.T) {
 	runtime.handleEndOfUtterance("sess_1")
 
 	snapshot = task.Snapshot()
-	if snapshot.State != session.StateActive {
-		t.Fatalf("expected active after end of utterance, got %s", snapshot.State)
+	if snapshot.State != session.StateProcessing {
+		t.Fatalf("expected processing after end of utterance, got %s", snapshot.State)
 	}
 }

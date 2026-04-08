@@ -11,6 +11,7 @@ import (
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
 	opusaudio "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio/opus"
+	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
@@ -28,6 +29,9 @@ type rtcSession struct {
 	upstream   *audio.EncodedPacketStream
 	pcm        *audio.PCMFrameStream
 	asr        *asrRuntime
+	response   *responseRuntime
+	botAudio   *webrtc.TrackLocalStaticSample
+	downlink   *downlinkAudioWriter
 }
 
 type rtcManager struct {
@@ -38,7 +42,11 @@ type rtcManager struct {
 	control         *controlRuntime
 	manager         *session.Manager
 	asrProvider     adapters.ASRAdapter
+	llmProvider     adapters.LLMAdapter
+	ttsProvider     adapters.TTSAdapter
 	asrSampleRate   uint32
+	segmenter       config.LLMSegmenterConfig
+	ttsConfig       config.XFYUNTTSConfig
 	decoderRegistry *audio.Registry
 }
 
@@ -48,7 +56,11 @@ func newRTCManager(
 	manager *session.Manager,
 	control *controlRuntime,
 	asrProvider adapters.ASRAdapter,
+	llmProvider adapters.LLMAdapter,
+	ttsProvider adapters.TTSAdapter,
 	asrSampleRate uint32,
+	segmenter config.LLMSegmenterConfig,
+	ttsConfig config.XFYUNTTSConfig,
 ) *rtcManager {
 	cfg := webrtc.Configuration{}
 	if stunURL != "" {
@@ -67,7 +79,11 @@ func newRTCManager(
 		control:         control,
 		manager:         manager,
 		asrProvider:     asrProvider,
+		llmProvider:     llmProvider,
+		ttsProvider:     ttsProvider,
 		asrSampleRate:   asrSampleRate,
+		segmenter:       segmenter,
+		ttsConfig:       ttsConfig,
 		decoderRegistry: registry,
 	}
 }
@@ -183,6 +199,12 @@ func (m *rtcManager) Close(sessionID string) {
 	if state.asr != nil {
 		state.asr.Close()
 	}
+	if state.response != nil {
+		state.response.Close()
+	}
+	if state.downlink != nil {
+		state.downlink.Close()
+	}
 }
 
 func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*webrtc.PeerConnection, error) {
@@ -190,6 +212,40 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 	if err != nil {
 		return nil, fmt.Errorf("new peer connection: %w", err)
 	}
+
+	botAudioTrack, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{
+			MimeType:  webrtc.MimeTypePCMU,
+			ClockRate: 8000,
+			Channels:  1,
+		},
+		"bot-audio",
+		sessionID,
+	)
+	if err != nil {
+		_ = pc.Close()
+		return nil, fmt.Errorf("create bot audio track: %w", err)
+	}
+	rtpSender, err := pc.AddTrack(botAudioTrack)
+	if err != nil {
+		_ = pc.Close()
+		return nil, fmt.Errorf("add bot audio track: %w", err)
+	}
+	go func() {
+		rtcpBuf := make([]byte, 1500)
+		for {
+			if _, _, readErr := rtpSender.Read(rtcpBuf); readErr != nil {
+				return
+			}
+		}
+	}()
+
+	m.mu.Lock()
+	state := m.session[sessionID]
+	if state != nil {
+		state.botAudio = botAudioTrack
+	}
+	m.mu.Unlock()
 
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate == nil {
@@ -229,6 +285,18 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 		_ = receiver
 		upstream := audio.NewEncodedPacketStream()
 		pcmStream := audio.NewPCMFrameStream()
+		downlink := newDownlinkAudioWriter(botAudioTrack, m.logger, m.ttsConfig.PCMEndian)
+		responseRuntime := newResponseRuntime(
+			sessionID,
+			m.manager,
+			m.llmProvider,
+			m.ttsProvider,
+			m.control,
+			m.segmenter,
+			downlink,
+			newTTSDebugDumper(m.ttsConfig.DebugDumpDir, m.ttsConfig.PCMEndian),
+			m.logger,
+		)
 		endpointer := newPacketEndpointer(900*time.Millisecond, endpointingCallbacks{
 			onSpeechStart: func() {
 				if m.control != nil {
@@ -252,7 +320,7 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 				}
 			},
 		})
-		asrRuntime := newASRRuntime(sessionID, m.manager, m.asrProvider, m.control, m.asrSampleRate, m.logger)
+		asrRuntime := newASRRuntime(sessionID, m.manager, m.asrProvider, m.control, responseRuntime, m.asrSampleRate, m.logger)
 
 		m.mu.Lock()
 		state := m.session[sessionID]
@@ -261,6 +329,8 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 			state.upstream = upstream
 			state.pcm = pcmStream
 			state.asr = asrRuntime
+			state.response = responseRuntime
+			state.downlink = downlink
 		}
 		m.mu.Unlock()
 		m.attachDecodeConsumer(sessionID, upstream, pcmStream)
@@ -270,6 +340,8 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 		defer pcmStream.Close()
 		defer endpointer.Close()
 		defer asrRuntime.Close()
+		defer responseRuntime.Close()
+		defer downlink.Close()
 
 		for {
 			packet, _, err := track.ReadRTP()
@@ -346,6 +418,17 @@ func (m *rtcManager) asrRuntime(sessionID string) *asrRuntime {
 		return nil
 	}
 	return state.asr
+}
+
+func (m *rtcManager) interruptResponse(sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state := m.session[sessionID]
+	if state == nil || state.response == nil {
+		return
+	}
+	state.response.Interrupt()
 }
 
 func newEncodedAudioPacket(sessionID string, track *webrtc.TrackRemote, packet *rtp.Packet) audio.EncodedPacket {

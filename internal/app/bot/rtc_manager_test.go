@@ -9,6 +9,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/mock"
+	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
@@ -61,7 +62,7 @@ func TestRTCManagerHandleOfferProducesAnswer(t *testing.T) {
 
 	sessionManager := session.NewManager(time.Minute)
 	control := newControlRuntime(sessionManager, slog.Default())
-	manager := newRTCManager("", slog.Default(), sessionManager, control, mock.NewASR(), 16000)
+	manager := newRTCManager("", slog.Default(), sessionManager, control, mock.NewASR(), mock.NewLLM(), mock.NewTTS(), 16000, config.LLMSegmenterConfig{}, config.XFYUNTTSConfig{})
 	writer := &captureWriter{}
 
 	if err := manager.HandleOffer("sess_1", signaling.SDPPayload{

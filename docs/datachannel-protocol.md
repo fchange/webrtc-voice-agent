@@ -13,6 +13,8 @@
 - bot events: `bot.speaking.started`, `bot.speaking.stopped`
 - status events: `vad.started`, `vad.stopped`
 - transcript events: `asr.partial`, `asr.final`
+- llm events: `llm.partial`, `llm.final`
+- tts events: `tts.segment.started`, `tts.segment.completed`
 - error events: `error`
 
 ## Envelope
@@ -39,12 +41,15 @@
 - `turn_id` 对 turn 级事件必填
 - bot 发出的状态事件必须尽量幂等
 - `asr.partial` 和 `asr.final` 由服务端产生，客户端不得伪造
+- `llm.partial` 表示 LLM token/chunk 级流式输出，`llm.final` 表示本轮聚合后的最终文本
+- `tts.segment.started` / `tts.segment.completed` 以句段为单位，便于调试 punctuation-boundary 分段行为
 
 ## Current Phase 0 Behavior
 
 - bot 在 `control` DataChannel 打开后会发送 `session.ready`
 - 客户端发送 `turn.interrupt_hint` 后，bot 会在当前 placeholder turn 上提升为 `turn.interrupt`
-- bot 当前会发送占位事件 `bot.speaking.started` 和 `bot.speaking.stopped`
-- bot 当前会基于上行 RTP 活动与静默超时发送 `vad.started / vad.stopped / turn.end_of_utterance / turn.completed`
+- bot 当前会在真实回复链开始/结束时发送 `bot.speaking.started` 和 `bot.speaking.stopped`
+- bot 当前会基于上行 RTP 活动与静默超时发送 `vad.started / vad.stopped / turn.end_of_utterance`
 - bot 当前会在 Opus 解码和 PCM 归一化成功时，把流式 ASR 结果通过 `asr.partial / asr.final` 回推到 DataChannel
-- 当前还没有接真实 TTS，因此 speaking 事件只表示控制流，不表示真实音频输出
+- bot 当前会在 `ASR final -> LLM stream -> punctuation_boundary -> TTS` 路径上发送 `llm.*` 与 `tts.segment.*`
+- 当前 TTS 已调用真实 provider，但还没有把合成音频回推到 WebRTC 下行音轨

@@ -21,6 +21,10 @@ const (
 	TypeVADStopped         MessageType = "vad.stopped"
 	TypeASRPartial         MessageType = "asr.partial"
 	TypeASRFinal           MessageType = "asr.final"
+	TypeLLMPartial         MessageType = "llm.partial"
+	TypeLLMFinal           MessageType = "llm.final"
+	TypeTTSSegmentStarted  MessageType = "tts.segment.started"
+	TypeTTSSegmentDone     MessageType = "tts.segment.completed"
 	TypeError              MessageType = "error"
 )
 
@@ -48,6 +52,14 @@ type StatusPayload struct {
 type TranscriptPayload struct {
 	Text  string `json:"text"`
 	Final bool   `json:"final,omitempty"`
+}
+
+type TextSegmentPayload struct {
+	Text      string `json:"text"`
+	SegmentID int    `json:"segment_id,omitempty"`
+	Chunks    int    `json:"chunks,omitempty"`
+	Bytes     int    `json:"bytes,omitempty"`
+	Final     bool   `json:"final,omitempty"`
 }
 
 func (e Envelope) Validate() error {

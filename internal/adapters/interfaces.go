@@ -38,6 +38,12 @@ type TTSEvent struct {
 	Final bool
 }
 
+type ProviderBundle struct {
+	ASR ASRAdapter
+	LLM LLMAdapter
+	TTS TTSAdapter
+}
+
 type ASRAdapter interface {
 	Name() string
 	Transcribe(ctx context.Context, input <-chan AudioChunk) (<-chan ASREvent, error)

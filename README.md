@@ -65,6 +65,19 @@ make run-signal
 make run-bot
 ```
 
+或者直接一键起三端：
+
+```bash
+./scripts/dev-all.sh
+```
+
+脚本行为：
+
+- 默认优先加载仓库根目录 `.env.local`
+- 同时启动 `signal`、`bot`、`web`
+- 前台输出三端日志，并带 `[signal]` / `[bot]` / `[web]` 前缀
+- `Ctrl+C` 会一起停止全部子进程
+
 默认端口：
 
 - Signal: `:8080`
@@ -99,8 +112,8 @@ make run-web
 
 - 真实 PCM VAD 替换 packet-activity endpointing
 - 有效 transcript 质量验证与 ASR 调试日志
-- LLM / TTS 闭环
-- 下行真实 bot 音频播放
+- 多轮对话上下文与 prompt 管理
+- 更稳的 TTS 播放缓冲与异常恢复
 - 更完整的会话关闭、异常恢复和可观测性
 
 这意味着项目已经不是空骨架，而是一个“控制面、协商面、媒体上行都已落地”的可继续演进起点。

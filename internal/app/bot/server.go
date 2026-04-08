@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/mock"
+	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/observability"
 	protoerrors "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/errors"
@@ -23,7 +23,7 @@ import (
 type Dependencies struct {
 	Manager   *session.Manager
 	Metrics   *observability.Metrics
-	Providers mock.ProviderBundle
+	Providers adapters.ProviderBundle
 }
 
 type Server struct {
@@ -37,11 +37,24 @@ var errSignalSessionClosed = errors.New("signal session closed")
 
 func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Server {
 	control := newControlRuntime(deps.Manager, logger)
+	rtc := newRTCManager(
+		cfg.STUNURL,
+		logger,
+		deps.Manager,
+		control,
+		deps.Providers.ASR,
+		deps.Providers.LLM,
+		deps.Providers.TTS,
+		uint32(cfg.ASR.XFYUN.SampleRate),
+		cfg.LLM.Segmenter,
+		cfg.TTS.XFYUN,
+	)
+	control.setInterruptHandler(rtc.interruptResponse)
 	return &Server{
 		cfg:    cfg,
 		logger: logger,
 		deps:   deps,
-		rtc:    newRTCManager(cfg.STUNURL, logger, deps.Manager, control, deps.Providers.ASR, uint32(cfg.ASR.XFYUN.SampleRate)),
+		rtc:    rtc,
 	}
 }
 

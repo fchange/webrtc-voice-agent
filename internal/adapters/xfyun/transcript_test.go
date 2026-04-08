@@ -51,7 +51,7 @@ func TestTranscriptAccumulatorPlainResultDoesNotAccumulateAcrossSN(t *testing.T)
 	acc := newTranscriptAccumulator()
 
 	got := acc.Apply(decodedResult{
-		SN: 1,
+		SN:  1,
 		RST: "pgs",
 		WS: []decodedWordSlot{
 			{CW: []decodedCandidateWord{{W: "友"}}},
@@ -62,7 +62,7 @@ func TestTranscriptAccumulatorPlainResultDoesNotAccumulateAcrossSN(t *testing.T)
 	}
 
 	got = acc.Apply(decodedResult{
-		SN: 2,
+		SN:  2,
 		RST: "pgs",
 		WS: []decodedWordSlot{
 			{CW: []decodedCandidateWord{{W: "友商"}}},
@@ -73,7 +73,7 @@ func TestTranscriptAccumulatorPlainResultDoesNotAccumulateAcrossSN(t *testing.T)
 	}
 
 	got = acc.Apply(decodedResult{
-		SN: 3,
+		SN:  3,
 		RST: "rlt",
 		WS: []decodedWordSlot{
 			{CW: []decodedCandidateWord{{W: "友商是傻逼"}}},
@@ -84,7 +84,7 @@ func TestTranscriptAccumulatorPlainResultDoesNotAccumulateAcrossSN(t *testing.T)
 	}
 
 	got = acc.Apply(decodedResult{
-		SN: 4,
+		SN:  4,
 		LS:  true,
 		RST: "rlt",
 		WS: []decodedWordSlot{

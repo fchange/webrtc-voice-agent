@@ -14,13 +14,14 @@
 | P0-008 | P0 | doing | 接入讯飞 WebSocket ASR adapter 骨架与鉴权配置 |
 | P0-009 | P0 | doing | 建立 Opus -> PCM -> 16k mono 音频桥，并把流式 transcript 接到 DataChannel |
 | P0-010 | P0 | doing | 将 Opus decoder 升级为浏览器更兼容的后端，并补充按 track 独立 decoder 生命周期 |
+| P0-011 | P0 | doing | 接入 OpenAI-compatible 流式 LLM、punctuation-boundary 句段切分与讯飞 TTS 回复链 |
 
 ## Next
 
 | ID | Priority | Status | Task |
 | --- | --- | --- | --- |
-| P1-001 | P1 | todo | Web 端接入真实麦克风和远端音频播放 |
-| P1-002 | P1 | todo | 接入 mock ASR / LLM / TTS 演示链路 |
+| P1-001 | P1 | todo | 将 TTS 合成音频真正回推到 WebRTC 下行音轨 |
+| P1-002 | P1 | todo | Web 端接入真实麦克风和远端音频播放 |
 | P1-003 | P1 | todo | 增加空闲超时与 graceful end |
 | P1-004 | P1 | todo | 增加结构化错误码与前后端映射 |
 | P1-005 | P1 | todo | 客户端加入本地 VAD hint 与 speaking meter |

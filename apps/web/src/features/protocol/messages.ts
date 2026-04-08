@@ -48,5 +48,9 @@ export const DataChannelTypes = {
   VADStopped: 'vad.stopped',
   ASRPartial: 'asr.partial',
   ASRFinal: 'asr.final',
+  LLMPartial: 'llm.partial',
+  LLMFinal: 'llm.final',
+  TTSSegmentStarted: 'tts.segment.started',
+  TTSSegmentCompleted: 'tts.segment.completed',
   Error: 'error',
 } as const;

@@ -13,3 +13,4 @@ tmp
 *.tsbuildinfo
 bin/
 .playwright-cli/
+output/

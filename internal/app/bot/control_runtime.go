@@ -13,10 +13,11 @@ import (
 )
 
 type controlRuntime struct {
-	manager  *session.Manager
-	logger   *slog.Logger
-	mu       sync.Mutex
-	channels map[string]*webrtc.DataChannel
+	manager     *session.Manager
+	logger      *slog.Logger
+	mu          sync.Mutex
+	channels    map[string]*webrtc.DataChannel
+	onInterrupt func(sessionID string)
 }
 
 func newControlRuntime(manager *session.Manager, logger *slog.Logger) *controlRuntime {
@@ -25,6 +26,12 @@ func newControlRuntime(manager *session.Manager, logger *slog.Logger) *controlRu
 		logger:   logger,
 		channels: make(map[string]*webrtc.DataChannel),
 	}
+}
+
+func (r *controlRuntime) setInterruptHandler(handler func(sessionID string)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onInterrupt = handler
 }
 
 func (r *controlRuntime) bind(sessionID string, channel *webrtc.DataChannel) {
@@ -114,6 +121,89 @@ func (r *controlRuntime) emitASREvent(sessionID string, turnID int64, event adap
 	})
 }
 
+func (r *controlRuntime) emitLLMEvent(sessionID string, turnID int64, event adapters.LLMEvent) {
+	messageType := dcproto.TypeLLMPartial
+	if event.Final {
+		messageType = dcproto.TypeLLMFinal
+	}
+
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      messageType,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.TranscriptPayload{
+			Text:  event.Text,
+			Final: event.Final,
+		},
+	})
+}
+
+func (r *controlRuntime) emitTTSSegmentStarted(sessionID string, turnID int64, segmentID int, text string) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeTTSSegmentStarted,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.TextSegmentPayload{
+			Text:      text,
+			SegmentID: segmentID,
+		},
+	})
+}
+
+func (r *controlRuntime) emitTTSSegmentCompleted(sessionID string, turnID int64, segmentID int, text string, chunks int, bytes int, final bool) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeTTSSegmentDone,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.TextSegmentPayload{
+			Text:      text,
+			SegmentID: segmentID,
+			Chunks:    chunks,
+			Bytes:     bytes,
+			Final:     final,
+		},
+	})
+}
+
+func (r *controlRuntime) emitBotSpeakingStarted(sessionID string, turnID int64, message string) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeBotSpeakingStart,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.StatusPayload{
+			Message: message,
+		},
+	})
+}
+
+func (r *controlRuntime) emitBotSpeakingStopped(sessionID string, turnID int64, message string) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeBotSpeakingStop,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.StatusPayload{
+			Message: message,
+		},
+	})
+}
+
+func (r *controlRuntime) emitTurnCompleted(sessionID string, turnID int64, message string) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeTurnCompleted,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.StatusPayload{
+			Message: message,
+		},
+	})
+}
+
 func (r *controlRuntime) handleVADStart(sessionID string) {
 	task, ok := r.manager.Get(sessionID)
 	if !ok {
@@ -190,21 +280,6 @@ func (r *controlRuntime) handleEndOfUtterance(sessionID string) {
 			Source: "server_packet_endpointing",
 		},
 	})
-
-	if err := task.CompleteTurn(snapshot.CurrentTurn); err != nil {
-		r.logger.Error("complete turn after endpointing failed", "session_id", sessionID, "turn_id", snapshot.CurrentTurn, "err", err)
-		return
-	}
-
-	r.emit(sessionID, dcproto.Envelope{
-		Version:   dcproto.Version,
-		Type:      dcproto.TypeTurnCompleted,
-		SessionID: sessionID,
-		TurnID:    snapshot.CurrentTurn,
-		Payload: dcproto.StatusPayload{
-			Message: "turn completed by endpointing placeholder pipeline",
-		},
-	})
 }
 
 func (r *controlRuntime) handleInterruptHint(channel *webrtc.DataChannel, task *session.Task, envelope dcproto.Envelope) error {
@@ -271,6 +346,13 @@ func (r *controlRuntime) handleInterruptHint(channel *webrtc.DataChannel, task *
 		TurnID:    result.InterruptedTurnID,
 		Payload:   result,
 	})
+
+	r.mu.Lock()
+	handler := r.onInterrupt
+	r.mu.Unlock()
+	if handler != nil {
+		handler(envelope.SessionID)
+	}
 
 	return nil
 }
