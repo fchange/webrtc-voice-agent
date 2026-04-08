@@ -45,3 +45,15 @@
   - speaking UI
   - 本地音量电平
   - 未来的快速 barge-in hint
+
+## ADR-0006: First Vertical Demo Is Hotel Phone Booking
+
+- Decision: 当前仓库的首个业务化演示场景固定为“电话预订酒店房间”
+- Reason:
+  - 比“通用聊天 bot”更容易定义清晰的成功标准
+  - 需要真实 tool 调用，能验证语音 agent 的业务闭环能力
+  - 房型库存与预订结果天然适合做结构化网页展示
+- Implications:
+  - 房型库存与预订状态必须来自内部服务
+  - bot 需要支持面向 LLM 的库存查询和预订 tools
+  - 无房分支必须作为一等对话路径处理，而不是失败后再补救

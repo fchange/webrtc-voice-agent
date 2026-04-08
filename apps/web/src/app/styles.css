@@ -30,14 +30,40 @@ button:disabled {
   cursor: not-allowed;
 }
 
+input,
+select {
+  width: 100%;
+  border: 1px solid rgba(19, 33, 48, 0.16);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.8);
+  color: #132130;
+  font: inherit;
+}
+
 .shell {
   width: min(1080px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 3rem 0 4rem;
 }
 
+.shellWide {
+  width: min(1180px, calc(100% - 2rem));
+}
+
 .hero {
   margin-bottom: 1.75rem;
+}
+
+.heroCompact {
+  margin-bottom: 1.25rem;
+}
+
+.heroRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: end;
 }
 
 .eyebrow {
@@ -55,6 +81,11 @@ button:disabled {
   max-width: 12ch;
 }
 
+.heroCompact h1 {
+  font-size: clamp(2.4rem, 7vw, 4.2rem);
+  max-width: 10ch;
+}
+
 .lede {
   max-width: 58rem;
   margin-top: 1rem;
@@ -70,6 +101,10 @@ button:disabled {
   margin-bottom: 1rem;
 }
 
+.callGrid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+}
+
 .card {
   padding: 1.25rem;
   border: 1px solid rgba(19, 33, 48, 0.08);
@@ -81,6 +116,12 @@ button:disabled {
 
 .card h2 {
   margin-top: 0;
+}
+
+.cardFeature {
+  background:
+    linear-gradient(180deg, rgba(255, 251, 245, 0.9), rgba(247, 242, 233, 0.88)),
+    rgba(255, 251, 245, 0.78);
 }
 
 .meta {
@@ -109,6 +150,191 @@ button:disabled {
   gap: 0.75rem;
 }
 
+.pageNav {
+  display: inline-flex;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.72);
+  border: 1px solid rgba(19, 33, 48, 0.08);
+  box-shadow: 0 16px 40px rgba(19, 33, 48, 0.06);
+}
+
+.navButton {
+  background: transparent;
+  color: #435160;
+}
+
+.navButtonActive {
+  background: #132130;
+  color: #f7f3ea;
+}
+
+.hotelGrid {
+  align-items: start;
+}
+
+.sectionHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.sectionHeading h2,
+.roomCardHeader h3 {
+  margin: 0;
+}
+
+.sectionHeading p {
+  margin: 0;
+  color: #5f7181;
+  font-size: 0.95rem;
+}
+
+.roomList,
+.reservationList,
+.roomGrid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.roomGrid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.roomCard,
+.reservationItem {
+  padding: 1rem;
+  border-radius: 1.1rem;
+  background: rgba(248, 244, 236, 0.82);
+  border: 1px solid rgba(19, 33, 48, 0.08);
+}
+
+.roomCard p,
+.reservationItem p {
+  margin: 0.5rem 0 0.75rem;
+  line-height: 1.6;
+  color: #314557;
+}
+
+.roomCardHeader,
+.reservationHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.roomMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.roomMeta div {
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(19, 33, 48, 0.08);
+}
+
+.roomMeta dt {
+  color: #6d7a87;
+  font-size: 0.9rem;
+}
+
+.roomMeta dd {
+  margin: 0.2rem 0 0;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.pillReady {
+  background: rgba(53, 123, 86, 0.14);
+  color: #245c40;
+}
+
+.pillMuted {
+  background: rgba(19, 33, 48, 0.1);
+  color: #536170;
+}
+
+.bookingForm {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.bookingForm label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.bookingForm span {
+  font-size: 0.92rem;
+  color: #5f7181;
+}
+
+.errorBanner,
+.successBanner,
+.reservationEmpty {
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+  border-radius: 1rem;
+}
+
+.errorBanner {
+  background: rgba(148, 61, 46, 0.1);
+  color: #7f2b1b;
+}
+
+.successBanner {
+  background: rgba(53, 123, 86, 0.12);
+  color: #245c40;
+}
+
+.reservationItem small {
+  color: #5f7181;
+}
+
+.logDetails {
+  border-radius: 1.1rem;
+  background: rgba(244, 239, 230, 0.56);
+  border: 1px solid rgba(19, 33, 48, 0.08);
+  padding: 0.4rem 0.5rem;
+}
+
+.logSummary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.6rem 0.75rem;
+}
+
+.logSummary::-webkit-details-marker {
+  display: none;
+}
+
+.logSummary span {
+  font-weight: 600;
+}
+
+.logSummary small {
+  color: #5f7181;
+}
+
+.logDetails[open] .timeline {
+  margin-top: 0.25rem;
+}
+
 .stack,
 .timeline {
   margin: 0;
@@ -126,9 +352,42 @@ button:disabled {
     max-width: 100%;
   }
 
+  .heroRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pageNav {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .navButton {
+    flex: 1;
+  }
+
+  .callGrid {
+    grid-template-columns: 1fr;
+  }
+
   .meta div {
     grid-template-columns: 1fr;
     gap: 0.15rem;
   }
-}
 
+  .sectionHeading,
+  .roomCardHeader,
+  .reservationHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .roomMeta {
+    grid-template-columns: 1fr;
+  }
+
+  .logSummary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -24,7 +24,17 @@
 - 接入 TTS adapter
 - 首轮完整实时语音对话闭环
 
-## Phase 3: Production Hardening
+## Phase 3: Hotel Booking Demo
+
+- 定义房型与预订领域模型
+- 提供房型实时库存内部服务
+- 提供带姓名和手机号的预订接口
+- Web 端增加库存与预订展示页
+- 给 LLM 暴露库存查询与预订 tools
+- 实现“无房自动排除并推荐替代房型”的对话闭环
+- 完成一次可演示的“电话问房并预订”端到端流程
+
+## Phase 4: Production Hardening
 
 - TURN 支持
 - 多 bot 实例路由

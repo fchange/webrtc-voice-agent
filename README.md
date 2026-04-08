@@ -1,6 +1,6 @@
 # WebRTC Voice Bot
 
-WebRTC 版开源语音对话机器人。
+WebRTC 版开源语音对话机器人，首个垂直 demo 场景聚焦在“电话预订酒店房间”。
 
 这个仓库当前不是完整产品实现，而是一个适合持续迭代的初始化地基，目标是先把单机 MVP 的工程边界搭对：
 
@@ -10,6 +10,7 @@ WebRTC 版开源语音对话机器人。
 - SessionTask 作为会话内调度核心
 - ASR / LLM / TTS 通过 adapter 接口接入
 - 中断、取消、结束作为高优先级系统事件处理
+- 首个业务场景通过内部库存服务、预订接口和 LLM tools 落到酒店电话预订 demo
 
 ## 当前技术选型
 
@@ -115,12 +116,15 @@ make run-web
 - 多轮对话上下文与 prompt 管理
 - 更稳的 TTS 播放缓冲与异常恢复
 - 更完整的会话关闭、异常恢复和可观测性
+- 酒店房型库存服务、预订接口、后台展示页和 LLM tool 调用闭环
 
 这意味着项目已经不是空骨架，而是一个“控制面、协商面、媒体上行都已落地”的可继续演进起点。
 
 ## 文档入口
 
 - [产品定义](./docs/product.md)
+- [人物画像](./docs/personas.md)
+- [酒店预订 Demo 设计](./docs/hotel-booking-demo.md)
 - [系统架构](./docs/architecture.md)
 - [路线图](./docs/roadmap.md)
 - [当前任务](./docs/tasks.md)

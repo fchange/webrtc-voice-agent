@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
+	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/hotel"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/observability"
 	protoerrors "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/errors"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
@@ -24,6 +26,7 @@ type Dependencies struct {
 	Manager   *session.Manager
 	Metrics   *observability.Metrics
 	Providers adapters.ProviderBundle
+	Hotel     *hotel.Store
 }
 
 type Server struct {
@@ -36,6 +39,9 @@ type Server struct {
 var errSignalSessionClosed = errors.New("signal session closed")
 
 func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Server {
+	if deps.Hotel == nil {
+		deps.Hotel = hotel.NewStore()
+	}
 	control := newControlRuntime(deps.Manager, logger)
 	rtc := newRTCManager(
 		cfg.STUNURL,
@@ -59,6 +65,11 @@ func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Se
 }
 
 func (s *Server) Run() error {
+	s.logger.Info("bot server starting", "addr", s.cfg.Addr, "stun_url", s.cfg.STUNURL)
+	return http.ListenAndServe(s.cfg.Addr, s.handler())
+}
+
+func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("POST /v1/bot/sessions", s.handleCreateSession)
@@ -66,9 +77,10 @@ func (s *Server) Run() error {
 	mux.HandleFunc("POST /v1/bot/sessions/{sessionID}/turns", s.handleStartTurn)
 	mux.HandleFunc("POST /v1/bot/sessions/{sessionID}/interrupt", s.handleInterrupt)
 	mux.HandleFunc("POST /v1/bot/sessions/{sessionID}/end", s.handleEndSession)
-
-	s.logger.Info("bot server starting", "addr", s.cfg.Addr, "stun_url", s.cfg.STUNURL)
-	return http.ListenAndServe(s.cfg.Addr, mux)
+	mux.HandleFunc("GET /internal/room-types", s.handleListRoomTypes)
+	mux.HandleFunc("GET /internal/reservations", s.handleListReservations)
+	mux.HandleFunc("POST /internal/reservations", s.handleCreateReservation)
+	return s.withCORS(mux)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -77,11 +89,32 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status":          "ok",
 		"active_sessions": s.deps.Manager.Count(),
 		"metrics":         s.deps.Metrics.Snapshot(),
+		"hotel": map[string]any{
+			"room_types":    len(s.deps.Hotel.ListRoomTypes()),
+			"reservations":  len(s.deps.Hotel.ListReservations(0)),
+			"service_ready": s.deps.Hotel != nil,
+		},
 		"providers": map[string]string{
 			"asr": s.deps.Providers.ASR.Name(),
 			"llm": s.deps.Providers.LLM.Name(),
 			"tts": s.deps.Providers.TTS.Name(),
 		},
+	})
+}
+
+func (s *Server) withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -174,6 +207,43 @@ func (s *Server) handleEndSession(w http.ResponseWriter, r *http.Request) {
 	s.rtc.Close(r.PathValue("sessionID"))
 	s.deps.Metrics.Inc("session_ended_total")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "closed"})
+}
+
+func (s *Server) handleListRoomTypes(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"room_types": s.deps.Hotel.ListRoomTypes(),
+	})
+}
+
+func (s *Server) handleListReservations(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reservations": s.deps.Hotel.ListReservations(limit),
+	})
+}
+
+func (s *Server) handleCreateReservation(w http.ResponseWriter, r *http.Request) {
+	var req hotel.CreateReservationInput
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	result := s.deps.Hotel.CreateReservation(req)
+	statusCode := http.StatusCreated
+	switch result.Status {
+	case hotel.ReservationStatusInvalidInput:
+		statusCode = http.StatusBadRequest
+	case hotel.ReservationStatusSoldOut:
+		statusCode = http.StatusConflict
+	case hotel.ReservationStatusFailed:
+		statusCode = http.StatusInternalServerError
+	}
+
+	writeJSON(w, statusCode, result)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
