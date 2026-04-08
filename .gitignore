@@ -10,5 +10,6 @@ tmp
 .idea
 .vscode
 *.log
+*.tsbuildinfo
 bin/
 .playwright-cli/

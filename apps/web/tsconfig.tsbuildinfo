@@ -1,1 +1,0 @@
-{"root":["./src/main.tsx","./src/vite-env.d.ts","./src/app/app.tsx","./src/features/protocol/messages.ts","./src/features/signaling/signaling-client.ts","./src/features/webrtc/voice-session.ts","./vite.config.ts"],"version":"5.9.3"}
