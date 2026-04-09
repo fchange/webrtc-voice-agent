@@ -204,6 +204,18 @@ func (r *controlRuntime) emitTurnCompleted(sessionID string, turnID int64, messa
 	})
 }
 
+func (r *controlRuntime) emitError(sessionID string, turnID int64, message string) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeError,
+		SessionID: sessionID,
+		TurnID:    turnID,
+		Payload: dcproto.StatusPayload{
+			Message: message,
+		},
+	})
+}
+
 func (r *controlRuntime) handleVADStart(sessionID string) {
 	task, ok := r.manager.Get(sessionID)
 	if !ok {
@@ -216,6 +228,7 @@ func (r *controlRuntime) handleVADStart(sessionID string) {
 		return
 	}
 	if created {
+		r.logger.Info("emitting turn.started from server endpointing", "session_id", sessionID, "turn_id", turnID)
 		r.emit(sessionID, dcproto.Envelope{
 			Version:   dcproto.Version,
 			Type:      dcproto.TypeTurnStarted,
@@ -227,6 +240,7 @@ func (r *controlRuntime) handleVADStart(sessionID string) {
 		})
 	}
 
+	r.logger.Info("emitting vad.started", "session_id", sessionID, "turn_id", turnID)
 	r.emit(sessionID, dcproto.Envelope{
 		Version:   dcproto.Version,
 		Type:      dcproto.TypeVADStarted,
@@ -248,7 +262,11 @@ func (r *controlRuntime) handleVADEnd(sessionID string) {
 	if snapshot.CurrentTurn == 0 {
 		return
 	}
+	if snapshot.State != session.StateProcessing && snapshot.State != session.StateResponding {
+		return
+	}
 
+	r.logger.Info("emitting vad.stopped", "session_id", sessionID, "turn_id", snapshot.CurrentTurn, "state", snapshot.State)
 	r.emit(sessionID, dcproto.Envelope{
 		Version:   dcproto.Version,
 		Type:      dcproto.TypeVADStopped,
@@ -270,7 +288,11 @@ func (r *controlRuntime) handleEndOfUtterance(sessionID string) {
 	if snapshot.CurrentTurn == 0 {
 		return
 	}
+	if snapshot.State != session.StateProcessing && snapshot.State != session.StateResponding {
+		return
+	}
 
+	r.logger.Info("emitting turn.end_of_utterance", "session_id", sessionID, "turn_id", snapshot.CurrentTurn, "state", snapshot.State)
 	r.emit(sessionID, dcproto.Envelope{
 		Version:   dcproto.Version,
 		Type:      dcproto.TypeTurnEndOfUtterance,

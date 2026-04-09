@@ -297,7 +297,7 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 			newTTSDebugDumper(m.ttsConfig.DebugDumpDir, m.ttsConfig.PCMEndian),
 			m.logger,
 		)
-		endpointer := newPacketEndpointer(900*time.Millisecond, endpointingCallbacks{
+		endpointer := newPacketEndpointer(900*time.Millisecond, m.logger.With("session_id", sessionID), endpointingCallbacks{
 			onSpeechStart: func() {
 				if m.control != nil {
 					m.control.handleVADStart(sessionID)
@@ -334,7 +334,7 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 		}
 		m.mu.Unlock()
 		m.attachDecodeConsumer(sessionID, upstream, pcmStream)
-		m.attachEndpointingConsumer(sessionID, upstream, endpointer)
+		m.attachEndpointingConsumer(sessionID, pcmStream, endpointer)
 		asrRuntime.Attach(pcmStream)
 		defer upstream.Close()
 		defer pcmStream.Close()
@@ -370,12 +370,12 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 	return pc, nil
 }
 
-func (m *rtcManager) attachEndpointingConsumer(sessionID string, upstream *audio.EncodedPacketStream, endpointer *packetEndpointer) {
-	packets, cancel := upstream.Subscribe(32)
+func (m *rtcManager) attachEndpointingConsumer(sessionID string, pcmStream *audio.PCMFrameStream, endpointer *packetEndpointer) {
+	frames, cancel := pcmStream.Subscribe(32)
 	go func() {
 		defer cancel()
-		for range packets {
-			endpointer.ObservePacket()
+		for frame := range frames {
+			endpointer.ObserveFrame(frame)
 		}
 		m.logger.Info("endpointing consumer closed", "session_id", sessionID)
 	}()
@@ -386,6 +386,8 @@ func (m *rtcManager) attachDecodeConsumer(sessionID string, upstream *audio.Enco
 	go func() {
 		defer cancel()
 		var decoder audio.Decoder
+		decodedPackets := 0
+		publishedFrames := 0
 		for packet := range packets {
 			if decoder == nil {
 				var err error
@@ -394,6 +396,14 @@ func (m *rtcManager) attachDecodeConsumer(sessionID string, upstream *audio.Enco
 					m.logger.Warn("create audio decoder failed", "session_id", sessionID, "codec", packet.Codec, "err", err)
 					continue
 				}
+				m.logger.Info(
+					"audio decoder created",
+					"session_id", sessionID,
+					"codec", packet.Codec,
+					"mime_type", packet.CodecMimeType,
+					"clock_rate", packet.ClockRate,
+					"channels", packet.Channels,
+				)
 			}
 
 			frames, err := decoder.Decode(packet)
@@ -401,11 +411,33 @@ func (m *rtcManager) attachDecodeConsumer(sessionID string, upstream *audio.Enco
 				m.logger.Warn("decode upstream audio packet failed", "session_id", sessionID, "codec", packet.Codec, "err", err)
 				continue
 			}
+			decodedPackets++
+			if decodedPackets == 1 {
+				m.logger.Info(
+					"first upstream audio packet decoded",
+					"session_id", sessionID,
+					"codec", packet.Codec,
+					"sequence_number", packet.SequenceNumber,
+					"payload_bytes", len(packet.Payload),
+					"frames", len(frames),
+				)
+			}
 			for _, frame := range frames {
 				pcmStream.Publish(frame)
+				publishedFrames++
+				if publishedFrames == 1 {
+					m.logger.Info(
+						"first pcm frame published",
+						"session_id", sessionID,
+						"sample_rate", frame.SampleRate,
+						"channels", frame.Channels,
+						"samples", len(frame.Samples),
+						"duration_ms", audio.PCMFrameDuration(frame).Milliseconds(),
+					)
+				}
 			}
 		}
-		m.logger.Info("decode consumer closed", "session_id", sessionID)
+		m.logger.Info("decode consumer closed", "session_id", sessionID, "decoded_packets", decodedPackets, "published_frames", publishedFrames)
 	}()
 }
 

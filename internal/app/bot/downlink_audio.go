@@ -38,6 +38,10 @@ type downlinkAudioWriter struct {
 	mu      sync.Mutex
 	pending int
 	idleCh  chan struct{}
+
+	queuedSamples  int
+	writtenSamples int
+	writtenBytes   int
 }
 
 func newDownlinkAudioWriter(track *webrtc.TrackLocalStaticSample, logger *slog.Logger, pcmEndian string) *downlinkAudioWriter {
@@ -81,6 +85,15 @@ func (w *downlinkAudioWriter) WritePCM16K(data []byte) error {
 	if len(frames) == 0 {
 		return nil
 	}
+	if w.logger != nil {
+		w.logger.Info(
+			"downlink pcm chunk normalized",
+			"input_bytes", len(data),
+			"samples", len(frame.Samples),
+			"mulaw_bytes", len(mulaw),
+			"frames", len(frames),
+		)
+	}
 	for _, frame := range frames {
 		w.markQueued(1)
 		sample := queuedSample{
@@ -101,6 +114,10 @@ func (w *downlinkAudioWriter) WaitIdle() {
 		return
 	}
 
+	if w.logger != nil {
+		w.logger.Info("downlink wait idle requested")
+	}
+
 	w.mu.Lock()
 	idle := w.idleCh
 	w.mu.Unlock()
@@ -114,6 +131,10 @@ func (w *downlinkAudioWriter) WaitIdle() {
 func (w *downlinkAudioWriter) Flush() {
 	if w == nil {
 		return
+	}
+
+	if w.logger != nil {
+		w.logger.Info("downlink flush requested")
 	}
 
 	ack := make(chan struct{})
@@ -134,13 +155,33 @@ func (w *downlinkAudioWriter) Close() {
 		return
 	}
 	w.once.Do(func() {
+		if w.logger != nil {
+			w.logger.Info("downlink writer closing")
+		}
 		close(w.closeCh)
 		<-w.doneCh
 	})
 }
 
 func (w *downlinkAudioWriter) run() {
-	defer close(w.doneCh)
+	defer func() {
+		if w.logger != nil {
+			w.mu.Lock()
+			queuedSamples := w.queuedSamples
+			writtenSamples := w.writtenSamples
+			writtenBytes := w.writtenBytes
+			pending := w.pending
+			w.mu.Unlock()
+			w.logger.Info(
+				"downlink writer stopped",
+				"queued_samples", queuedSamples,
+				"written_samples", writtenSamples,
+				"written_bytes", writtenBytes,
+				"pending", pending,
+			)
+		}
+		close(w.doneCh)
+	}()
 
 	for {
 		select {
@@ -168,6 +209,23 @@ func (w *downlinkAudioWriter) writeAndPace(sample queuedSample) bool {
 		w.markDone(1)
 		return true
 	}
+	w.mu.Lock()
+	w.writtenSamples++
+	w.writtenBytes += len(sample.data)
+	writtenSamples := w.writtenSamples
+	writtenBytes := w.writtenBytes
+	pending := w.pending
+	w.mu.Unlock()
+	if w.logger != nil && (writtenSamples == 1 || writtenSamples%50 == 0) {
+		w.logger.Info(
+			"downlink sample written",
+			"sample_index", writtenSamples,
+			"bytes", len(sample.data),
+			"duration_ms", sample.duration.Milliseconds(),
+			"pending", pending,
+			"total_bytes", writtenBytes,
+		)
+	}
 
 	timer := time.NewTimer(sample.duration)
 	defer timer.Stop()
@@ -191,6 +249,20 @@ func (w *downlinkAudioWriter) enqueue(sample queuedSample) error {
 	case <-w.closeCh:
 		return fmt.Errorf("downlink audio writer closed")
 	case w.queue <- sample:
+		w.mu.Lock()
+		w.queuedSamples++
+		queuedSamples := w.queuedSamples
+		pending := w.pending
+		w.mu.Unlock()
+		if w.logger != nil && (queuedSamples == 1 || queuedSamples%50 == 0) {
+			w.logger.Info(
+				"downlink sample queued",
+				"sample_index", queuedSamples,
+				"bytes", len(sample.data),
+				"duration_ms", sample.duration.Milliseconds(),
+				"pending", pending,
+			)
+		}
 		return nil
 	}
 }
@@ -203,6 +275,9 @@ func (w *downlinkAudioWriter) flushQueue() {
 			drained++
 		default:
 			if drained > 0 {
+				if w.logger != nil {
+					w.logger.Info("downlink queue drained", "samples", drained)
+				}
 				w.markDone(drained)
 			}
 			return

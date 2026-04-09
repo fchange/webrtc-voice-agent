@@ -39,6 +39,7 @@ type VADConfig struct {
 type ASRConfig struct {
 	Provider string
 	XFYUN    XFYUNASRConfig
+	VOLC     VolcASRConfig
 }
 
 type LLMConfig struct {
@@ -68,6 +69,32 @@ type OpenAICompatibleLLMConfig struct {
 type TTSConfig struct {
 	Provider string
 	XFYUN    XFYUNTTSConfig
+	VOLC     VolcTTSConfig
+}
+
+type VolcASRConfig struct {
+	WSURL       string
+	AppID       string
+	AccessToken string
+	ResourceID  string
+	Language    string
+	SampleRate  int
+	ChunkMS     int
+}
+
+type VolcTTSConfig struct {
+	BaseURL     string
+	AccessToken string
+	AppID       string
+	ResourceID  string
+	Cluster     string
+	VoiceType   string
+	Encoding    string
+	SampleRate  int
+	SpeedRatio  float64
+	VolumeRatio float64
+	PitchRatio  float64
+	Timeout     time.Duration
 }
 
 type XFYUNTTSConfig struct {
@@ -149,6 +176,15 @@ func LoadBotConfig() BotConfig {
 				EOSMS:         getInt("ASR_XFYUN_EOS_MS", 6000),
 				DWA:           getEnv("ASR_XFYUN_DWA", "wpgs"),
 			},
+			VOLC: VolcASRConfig{
+				WSURL:       getEnv("ASR_VOLC_WS_URL", "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"),
+				AppID:       getEnv("ASR_VOLC_APP_ID", ""),
+				AccessToken: getEnv("ASR_VOLC_ACCESS_TOKEN", ""),
+				ResourceID:  getEnv("ASR_VOLC_RESOURCE_ID", "volc.bigasr.sauc.duration"),
+				Language:    getEnv("ASR_VOLC_LANGUAGE", "zh-CN"),
+				SampleRate:  getInt("ASR_VOLC_SAMPLE_RATE", 16000),
+				ChunkMS:     getInt("ASR_VOLC_CHUNK_MS", 200),
+			},
 		},
 		LLM: LLMConfig{
 			Provider: getEnv("LLM_PROVIDER", "mock"),
@@ -189,6 +225,20 @@ func LoadBotConfig() BotConfig {
 				Pitch:         getInt("TTS_XFYUN_PITCH", 50),
 				Background:    getInt("TTS_XFYUN_BACKGROUND", 0),
 				DebugDumpDir:  getEnv("TTS_DEBUG_DUMP_DIR", ""),
+			},
+			VOLC: VolcTTSConfig{
+				BaseURL:     getEnv("TTS_VOLC_BASE_URL", "https://openspeech.bytedance.com/api/v1/tts"),
+				AccessToken: getEnv("TTS_VOLC_ACCESS_TOKEN", ""),
+				AppID:       getEnv("TTS_VOLC_APP_ID", ""),
+				ResourceID:  getEnv("TTS_VOLC_RESOURCE_ID", "volc.service_type.10029"),
+				Cluster:     getEnv("TTS_VOLC_CLUSTER", "volcano_tts"),
+				VoiceType:   getEnv("TTS_VOLC_VOICE_TYPE", "BV007_streaming"),
+				Encoding:    getEnv("TTS_VOLC_ENCODING", "pcm"),
+				SampleRate:  getInt("TTS_VOLC_SAMPLE_RATE", 16000),
+				SpeedRatio:  getFloat("TTS_VOLC_SPEED_RATIO", 1.0),
+				VolumeRatio: getFloat("TTS_VOLC_VOLUME_RATIO", 1.0),
+				PitchRatio:  getFloat("TTS_VOLC_PITCH_RATIO", 1.0),
+				Timeout:     getDuration("TTS_VOLC_TIMEOUT", 20*time.Second),
 			},
 		},
 	}

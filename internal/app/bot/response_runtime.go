@@ -163,6 +163,16 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 }
 
 func (r *responseRuntime) synthesizeSegment(ctx context.Context, turnID int64, segmentID int, text string, isFinalSegment bool) {
+	r.logger.Info(
+		"tts segment synthesis requested",
+		"session_id", r.sessionID,
+		"turn_id", turnID,
+		"segment_id", segmentID,
+		"text", text,
+		"text_len", len(text),
+		"final_segment", isFinalSegment,
+		"provider", r.tts.Name(),
+	)
 	if r.control != nil {
 		r.control.emitTTSSegmentStarted(r.sessionID, turnID, segmentID, text)
 	}
@@ -186,12 +196,30 @@ func (r *responseRuntime) synthesizeSegment(ctx context.Context, turnID int64, s
 	for event := range events {
 		chunks++
 		bytes += len(event.Chunk.PCM)
+		r.logger.Info(
+			"tts segment event received",
+			"session_id", r.sessionID,
+			"turn_id", turnID,
+			"segment_id", segmentID,
+			"chunk_index", chunks,
+			"audio_bytes", len(event.Chunk.PCM),
+			"final", event.Final,
+		)
 		if len(event.Chunk.PCM) > 0 {
 			rawAudio = append(rawAudio, event.Chunk.PCM...)
 		}
 		if len(event.Chunk.PCM) > 0 && r.audioOut != nil {
 			if err := r.audioOut.WritePCM16K(event.Chunk.PCM); err != nil {
 				r.logger.Error("write synthesized audio to downlink failed", "session_id", r.sessionID, "turn_id", turnID, "segment_id", segmentID, "err", err)
+			} else {
+				r.logger.Info(
+					"synthesized audio queued to downlink",
+					"session_id", r.sessionID,
+					"turn_id", turnID,
+					"segment_id", segmentID,
+					"chunk_index", chunks,
+					"audio_bytes", len(event.Chunk.PCM),
+				)
 			}
 		}
 		if event.Final {

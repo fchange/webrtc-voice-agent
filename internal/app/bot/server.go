@@ -43,6 +43,18 @@ func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Se
 		deps.Hotel = hotel.NewStore()
 	}
 	control := newControlRuntime(deps.Manager, logger)
+
+	asrSampleRate := uint32(cfg.VAD.SampleRate)
+	switch cfg.ASR.Provider {
+	case "xfyun-spark-iat":
+		if cfg.ASR.XFYUN.SampleRate > 0 {
+			asrSampleRate = uint32(cfg.ASR.XFYUN.SampleRate)
+		}
+	case "volc-doubao-asr":
+		if cfg.ASR.VOLC.SampleRate > 0 {
+			asrSampleRate = uint32(cfg.ASR.VOLC.SampleRate)
+		}
+	}
 	rtc := newRTCManager(
 		cfg.STUNURL,
 		logger,
@@ -51,7 +63,7 @@ func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Se
 		deps.Providers.ASR,
 		deps.Providers.LLM,
 		deps.Providers.TTS,
-		uint32(cfg.ASR.XFYUN.SampleRate),
+		asrSampleRate,
 		cfg.LLM.Segmenter,
 		cfg.TTS.XFYUN,
 	)

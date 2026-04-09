@@ -83,42 +83,65 @@ func (t *TTS) Synthesize(ctx context.Context, req adapters.SynthesisRequest) (<-
 		return nil, err
 	}
 
-	t.logger.Info("xfyun tts synthesis started", "turn_id", req.TurnID, "text", req.Text, "voice", t.cfg.Voice)
+	t.logger.Info(
+		"xfyun tts synthesis started",
+		"session_id", req.SessionID,
+		"turn_id", req.TurnID,
+		"text", req.Text,
+		"text_len", len(req.Text),
+		"voice", t.cfg.Voice,
+		"audio_format", t.cfg.AudioFormat,
+		"audio_encoding", t.cfg.AudioEncoding,
+	)
 
 	out := make(chan adapters.TTSEvent, 32)
-	go t.readSynthesis(ctx, conn, out)
+	go t.readSynthesis(ctx, conn, out, req)
 	return out, nil
 }
 
-func (t *TTS) readSynthesis(ctx context.Context, conn *websocket.Conn, out chan<- adapters.TTSEvent) {
+func (t *TTS) readSynthesis(ctx context.Context, conn *websocket.Conn, out chan<- adapters.TTSEvent, req adapters.SynthesisRequest) {
 	defer close(out)
 	defer conn.Close()
 
+	chunks := 0
+	bytes := 0
 	for {
 		select {
 		case <-ctx.Done():
-			t.logger.Info("xfyun tts synthesis cancelled", "err", ctx.Err())
+			t.logger.Info("xfyun tts synthesis cancelled", "session_id", req.SessionID, "turn_id", req.TurnID, "err", ctx.Err(), "chunks", chunks, "bytes", bytes)
 			return
 		default:
 		}
 
 		var response ttsResponseEnvelope
 		if err := conn.ReadJSON(&response); err != nil {
-			t.logger.Info("xfyun tts stream closed", "err", err)
+			t.logger.Info("xfyun tts stream closed", "session_id", req.SessionID, "turn_id", req.TurnID, "err", err, "chunks", chunks, "bytes", bytes)
 			return
 		}
 		if response.Code != 0 {
-			t.logger.Error("xfyun tts response error", "code", response.Code, "message", response.Message)
+			t.logger.Error("xfyun tts response error", "session_id", req.SessionID, "turn_id", req.TurnID, "sid", response.Sid, "code", response.Code, "message", response.Message)
 			return
 		}
 
 		audio, err := base64.StdEncoding.DecodeString(response.Data.Audio)
 		if err != nil {
-			t.logger.Error("decode xfyun tts audio failed", "err", err)
+			t.logger.Error("decode xfyun tts audio failed", "session_id", req.SessionID, "turn_id", req.TurnID, "sid", response.Sid, "err", err)
 			return
 		}
 
-		t.logger.Info("xfyun tts chunk received", "status", response.Data.Status, "audio_bytes", len(audio))
+		chunks++
+		bytes += len(audio)
+		t.logger.Info(
+			"xfyun tts chunk received",
+			"session_id", req.SessionID,
+			"turn_id", req.TurnID,
+			"sid", response.Sid,
+			"status", response.Data.Status,
+			"audio_bytes", len(audio),
+			"ced", response.Data.Ced,
+			"chunks", chunks,
+			"bytes", bytes,
+		)
 		out <- adapters.TTSEvent{
 			Chunk: adapters.AudioChunk{
 				PCM: audio,
@@ -127,6 +150,7 @@ func (t *TTS) readSynthesis(ctx context.Context, conn *websocket.Conn, out chan<
 		}
 
 		if response.Data.Status == 2 {
+			t.logger.Info("xfyun tts synthesis completed", "session_id", req.SessionID, "turn_id", req.TurnID, "sid", response.Sid, "chunks", chunks, "bytes", bytes)
 			return
 		}
 	}

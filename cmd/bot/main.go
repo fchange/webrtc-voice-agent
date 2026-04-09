@@ -6,6 +6,7 @@ import (
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/mock"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/openaicompat"
+	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/volc"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/xfyun"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/app/bot"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
@@ -43,6 +44,12 @@ func selectASRProvider(cfg config.BotConfig) adapters.ASRAdapter {
 			return provider
 		}
 	}
+	if cfg.ASR.Provider == "volc-doubao-asr" {
+		provider := volc.NewASR(cfg.ASR.VOLC, logging.New("volc-asr"))
+		if provider.Ready() {
+			return provider
+		}
+	}
 	return mock.NewASR()
 }
 
@@ -59,6 +66,12 @@ func selectLLMProvider(cfg config.BotConfig) adapters.LLMAdapter {
 func selectTTSProvider(cfg config.BotConfig) adapters.TTSAdapter {
 	if cfg.TTS.Provider == "xfyun-tts" {
 		provider := xfyun.NewTTS(cfg.TTS.XFYUN, logging.New("xfyun-tts"))
+		if provider.Ready() {
+			return provider
+		}
+	}
+	if cfg.TTS.Provider == "volc-doubao-tts" {
+		provider := volc.NewTTS(cfg.TTS.VOLC, logging.New("volc-tts"))
 		if provider.Ready() {
 			return provider
 		}

@@ -2,7 +2,9 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,10 @@ import (
 
 type transcriptEmitter interface {
 	emitASREvent(sessionID string, turnID int64, event adapters.ASREvent)
+}
+
+type runtimeErrorEmitter interface {
+	emitError(sessionID string, turnID int64, message string)
 }
 
 type asrEventHandler interface {
@@ -38,6 +44,11 @@ type asrRuntime struct {
 	byteCount   uint64
 	startedAt   time.Time
 }
+
+const (
+	stablePartialRepeatThreshold = 4
+	stablePartialTimeout         = 1500 * time.Millisecond
+)
 
 func newASRRuntime(
 	sessionID string,
@@ -101,6 +112,9 @@ func (r *asrRuntime) HandleSpeechStart() {
 		r.mu.Unlock()
 		cancel()
 		r.logger.Error("start asr provider failed", "session_id", r.sessionID, "turn_id", turnID, "provider", r.provider.Name(), "err", err)
+		if emitter, ok := r.emitter.(runtimeErrorEmitter); ok {
+			emitter.emitError(r.sessionID, turnID, fmt.Sprintf("ASR provider %s failed to start: %v", r.provider.Name(), err))
+		}
 		return
 	}
 
@@ -231,7 +245,55 @@ func (r *asrRuntime) forwardEvents(
 	events <-chan adapters.ASREvent,
 ) {
 	defer cancel()
+	lastPartialText := ""
+	lastPartialAt := time.Time{}
+	repeatCount := 0
+	stablePromoted := false
+	lastNonEmptyText := ""
+	sawFinal := false
+
 	for event := range events {
+		if stablePromoted {
+			continue
+		}
+
+		if text := strings.TrimSpace(event.Text); text != "" {
+			lastNonEmptyText = text
+		}
+
+		if !event.Final && event.Text != "" {
+			now := time.Now().UTC()
+			if event.Text == lastPartialText {
+				repeatCount++
+				if shouldPromoteStablePartial(event.Text, repeatCount, lastPartialAt, now) {
+					finalEvent := adapters.ASREvent{
+						Text:  event.Text,
+						Final: true,
+					}
+					r.logger.Info(
+						"promoting stable asr partial to final",
+						"session_id", r.sessionID,
+						"turn_id", turnID,
+						"provider", r.provider.Name(),
+						"repeat_count", repeatCount,
+						"text_len", len(event.Text),
+						"text", event.Text,
+					)
+					r.emitter.emitASREvent(r.sessionID, turnID, finalEvent)
+					if r.handler != nil {
+						r.handler.HandleASREvent(turnID, finalEvent)
+					}
+					r.HandleEndOfUtterance()
+					stablePromoted = true
+					continue
+				}
+			} else {
+				lastPartialText = event.Text
+				lastPartialAt = now
+				repeatCount = 1
+			}
+		}
+
 		r.logger.Info(
 			"asr event received",
 			"session_id", r.sessionID,
@@ -244,6 +306,36 @@ func (r *asrRuntime) forwardEvents(
 		r.emitter.emitASREvent(r.sessionID, turnID, event)
 		if r.handler != nil {
 			r.handler.HandleASREvent(turnID, event)
+		}
+		if event.Final {
+			sawFinal = true
+			r.logger.Info(
+				"provider asr final received; closing turn input",
+				"session_id", r.sessionID,
+				"turn_id", turnID,
+				"provider", r.provider.Name(),
+			)
+			r.HandleEndOfUtterance()
+			stablePromoted = true
+		}
+	}
+
+	if !stablePromoted && !sawFinal && lastNonEmptyText != "" {
+		finalEvent := adapters.ASREvent{
+			Text:  lastNonEmptyText,
+			Final: true,
+		}
+		r.logger.Info(
+			"promoting trailing asr partial to final after provider stream ended",
+			"session_id", r.sessionID,
+			"turn_id", turnID,
+			"provider", r.provider.Name(),
+			"text_len", len(lastNonEmptyText),
+			"text", lastNonEmptyText,
+		)
+		r.emitter.emitASREvent(r.sessionID, turnID, finalEvent)
+		if r.handler != nil {
+			r.handler.HandleASREvent(turnID, finalEvent)
 		}
 	}
 
@@ -259,4 +351,18 @@ func (r *asrRuntime) forwardEvents(
 		r.startedAt = time.Time{}
 	}
 	r.mu.Unlock()
+}
+
+func shouldPromoteStablePartial(text string, repeatCount int, lastPartialAt time.Time, now time.Time) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	if repeatCount < stablePartialRepeatThreshold {
+		return false
+	}
+	if now.Sub(lastPartialAt) < stablePartialTimeout {
+		return false
+	}
+
+	return strings.ContainsAny(text, "。！？!?")
 }
