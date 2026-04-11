@@ -81,6 +81,52 @@ func hotelTools(store *hotel.Store) []openaicompat.Tool {
 				return store.CreateReservation(input), nil
 			},
 		},
+		{
+			Type: "function",
+			Function: openaicompat.ToolFunction{
+				Name:        "end_call",
+				Description: "当你已经完成本次服务，准备说完最后一句结束语后结束通话时调用。调用后仍然要输出一条自然、简短的中文结束语；如果还需要继续追问、确认或解释，就不要调用。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"reason": map[string]any{
+							"type":        "string",
+							"description": "结束通话原因，例如 reservation_confirmed、bot_farewell、user_declined。",
+						},
+						"message": map[string]any{
+							"type":        "string",
+							"description": "给日志或前端提示用的简短中文说明。",
+						},
+					},
+					"additionalProperties": false,
+				},
+			},
+			ShouldUse: func(adapters.CompletionRequest) bool {
+				return true
+			},
+			Handler: func(ctx context.Context, arguments json.RawMessage) (any, error) {
+				var input struct {
+					Reason  string `json:"reason"`
+					Message string `json:"message"`
+				}
+				if len(arguments) > 0 {
+					if err := json.Unmarshal(arguments, &input); err != nil {
+						return nil, err
+					}
+				}
+
+				reason, message := normalizeEndCallRequest(input.Reason, input.Message)
+				if directives := turnDirectivesFromContext(ctx); directives != nil {
+					directives.RequestEndCall(reason, message)
+				}
+
+				return map[string]any{
+					"status": "scheduled",
+					"reason": reason,
+					"mode":   "after_current_reply",
+				}, nil
+			},
+		},
 	}
 }
 
@@ -109,6 +155,16 @@ func hotelQueryNeedsReservation(req adapters.CompletionRequest) bool {
 	return false
 }
 
+func hotelQueryNeedsEndCall(req adapters.CompletionRequest) bool {
+	if hotelQueryNeedsReservation(req) {
+		return true
+	}
+	if hotelTextLooksFarewell(req.Text) {
+		return true
+	}
+	return historyHasConfirmedReservation(req.History)
+}
+
 func hotelTextHasBookingIntent(text string) bool {
 	return strings.ContainsAny(text, "订预住") || strings.Contains(text, "下单")
 }
@@ -119,6 +175,56 @@ func hotelTextHasGuestDetails(text string) bool {
 		strings.Contains(text, "手机号") ||
 		strings.Contains(text, "电话") ||
 		strings.Contains(text, "号码")
+}
+
+func hotelTextLooksFarewell(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	if strings.Contains(text, "再见") || strings.Contains(text, "拜拜") {
+		return true
+	}
+	if strings.Contains(text, "不用了") || strings.Contains(text, "先这样") || strings.Contains(text, "就这样") {
+		return true
+	}
+	return (strings.Contains(text, "谢谢") || strings.Contains(text, "感谢")) &&
+		(strings.Contains(text, "没了") || strings.Contains(text, "不用") || strings.Contains(text, "再见"))
+}
+
+func historyHasConfirmedReservation(history []adapters.ConversationMessage) bool {
+	for idx := len(history) - 1; idx >= 0 && idx >= len(history)-4; idx-- {
+		item := history[idx]
+		if item.Role != "assistant" {
+			continue
+		}
+		if hotelTextLooksConfirmed(item.Text) || strings.Contains(item.Text, "确认号") {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeEndCallRequest(reason string, message string) (string, string) {
+	reason = strings.TrimSpace(reason)
+	message = strings.TrimSpace(message)
+	switch reason {
+	case "reservation_confirmed":
+		if message == "" {
+			message = "本次预订已完成，通话即将结束。"
+		}
+		return reason, message
+	case "user_declined":
+		if message == "" {
+			message = "用户当前无需继续办理，通话即将结束。"
+		}
+		return reason, message
+	default:
+		if message == "" {
+			message = "Bot 已完成结束语，通话即将结束。"
+		}
+		return "bot_farewell", message
+	}
 }
 
 func hotelBookingConfirmationFinalizer(content string, results []openaicompat.ToolCallResult) string {

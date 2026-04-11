@@ -26,6 +26,7 @@ type rtcSession struct {
 	signal             signalWriter
 	remoteSet          bool
 	controlReady       bool
+	endingScheduled    bool
 	openingTurnStarted bool
 	endpointer         *packetEndpointer
 	upstream           *audio.EncodedPacketStream
@@ -52,6 +53,8 @@ type rtcManager struct {
 	ttsConfig       config.XFYUNTTSConfig
 	decoderRegistry *audio.Registry
 }
+
+const sessionEndingGracePeriod = 700 * time.Millisecond
 
 func newRTCManager(
 	stunURL string,
@@ -112,7 +115,7 @@ func (m *rtcManager) markControlReady(sessionID string) {
 func (m *rtcManager) maybeStartOpeningTurn(sessionID string) {
 	m.mu.Lock()
 	state := m.session[sessionID]
-	if state == nil || !state.controlReady || state.response == nil || state.openingTurnStarted {
+	if state == nil || !state.controlReady || state.response == nil || state.openingTurnStarted || state.endingScheduled {
 		m.mu.Unlock()
 		return
 	}
@@ -128,6 +131,48 @@ func (m *rtcManager) maybeStartOpeningTurn(sessionID string) {
 		}
 		m.mu.Unlock()
 	}
+}
+
+func (m *rtcManager) ScheduleEnd(sessionID string, reason string, message string) {
+	m.mu.Lock()
+	state := m.session[sessionID]
+	if state == nil || state.endingScheduled {
+		m.mu.Unlock()
+		return
+	}
+	state.endingScheduled = true
+	signal := state.signal
+	m.mu.Unlock()
+
+	if m.control != nil {
+		m.control.emitSessionEnding(sessionID, message)
+	}
+
+	go func() {
+		time.Sleep(sessionEndingGracePeriod)
+		if signal != nil {
+			if err := signal.WriteEnvelope(signaling.Envelope{
+				Version:   signaling.Version,
+				Type:      signaling.TypeSessionClose,
+				SessionID: sessionID,
+				Payload: mustMarshal(map[string]string{
+					"reason": reason,
+				}),
+			}); err != nil {
+				m.logger.Info("send session close to signal failed", "session_id", sessionID, "err", err)
+			}
+		}
+		m.Close(sessionID)
+		_ = m.manager.End(sessionID)
+	}()
+}
+
+func (m *rtcManager) isEnding(sessionID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state := m.session[sessionID]
+	return state != nil && state.endingScheduled
 }
 
 func (m *rtcManager) HandleOffer(sessionID string, payload signaling.SDPPayload, writer signalWriter) error {
@@ -247,6 +292,9 @@ func (m *rtcManager) Close(sessionID string) {
 	if state.downlink != nil {
 		state.downlink.Close()
 	}
+	if closer, ok := state.signal.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
 }
 
 func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*webrtc.PeerConnection, error) {
@@ -334,6 +382,7 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 			m.llmProvider,
 			m.ttsProvider,
 			m.control,
+			m,
 			m.segmenter,
 			downlink,
 			newTTSDebugDumper(m.ttsConfig.DebugDumpDir, m.ttsConfig.PCMEndian),
@@ -341,6 +390,9 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 		)
 		endpointer := newPacketEndpointer(m.endpointSilence, m.logger.With("session_id", sessionID), endpointingCallbacks{
 			onSpeechStart: func() {
+				if m.isEnding(sessionID) {
+					return
+				}
 				if m.control != nil {
 					m.control.handleVADStart(sessionID)
 				}

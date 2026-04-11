@@ -53,4 +53,6 @@
 - bot 当前会基于上行 RTP 活动与静默超时发送 `vad.started / vad.stopped / turn.end_of_utterance`
 - bot 当前会在 Opus 解码和 PCM 归一化成功时，把流式 ASR 结果通过 `asr.partial / asr.final` 回推到 DataChannel
 - bot 当前会在 `ASR final -> LLM stream -> punctuation_boundary -> TTS` 路径上发送 `llm.*` 与 `tts.segment.*`
+- bot 当前支持 LLM 通过 `end_call` tool 写入“本轮播完后挂断”的控制意图；真正进入结束流程要等当前 turn 的 TTS 和下行音频都完成
+- `session.ending` 表示服务端已经确认要主动结束通话，通常出现在 bot 最后一轮 `turn.completed` 之后、signaling `session.close` 之前
 - 当前 TTS 已调用真实 provider，但还没有把合成音频回推到 WebRTC 下行音轨

@@ -72,6 +72,13 @@ type blockingLLM struct {
 	started chan struct{}
 }
 
+type directiveLLM struct {
+	events   []adapters.LLMEvent
+	reason   string
+	message  string
+	requests []adapters.CompletionRequest
+}
+
 func (b *blockingLLM) Name() string {
 	return "blocking-llm"
 }
@@ -93,6 +100,44 @@ func (b *blockingLLM) Complete(ctx context.Context, _ adapters.CompletionRequest
 		close(b.started)
 	}
 	return out, nil
+}
+
+func (d *directiveLLM) Name() string {
+	return "directive-llm"
+}
+
+func (d *directiveLLM) Complete(ctx context.Context, req adapters.CompletionRequest) (<-chan adapters.LLMEvent, error) {
+	d.requests = append(d.requests, req)
+	if directives := turnDirectivesFromContext(ctx); directives != nil {
+		directives.RequestEndCall(d.reason, d.message)
+	}
+
+	out := make(chan adapters.LLMEvent, len(d.events))
+	go func() {
+		defer close(out)
+		for _, event := range d.events {
+			select {
+			case <-ctx.Done():
+				return
+			case out <- event:
+			}
+		}
+	}()
+	return out, nil
+}
+
+type captureEnder struct {
+	sessionID string
+	reason    string
+	message   string
+	count     int
+}
+
+func (c *captureEnder) ScheduleEnd(sessionID string, reason string, message string) {
+	c.sessionID = sessionID
+	c.reason = reason
+	c.message = message
+	c.count++
 }
 
 func TestResponseRuntimeSegmentsAtPunctuationAndCompletesTurn(t *testing.T) {
@@ -122,6 +167,7 @@ func TestResponseRuntimeSegmentsAtPunctuationAndCompletesTurn(t *testing.T) {
 		llm,
 		tts,
 		newControlRuntime(manager, slog.Default()),
+		nil,
 		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
 		nil,
 		nil,
@@ -177,6 +223,7 @@ func TestResponseRuntimeIncludesRecentHistoryInNextCompletion(t *testing.T) {
 		llm,
 		&testTTS{},
 		newControlRuntime(manager, slog.Default()),
+		nil,
 		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
 		nil,
 		nil,
@@ -226,6 +273,7 @@ func TestResponseRuntimeCancelledRunDoesNotCompleteOldTurn(t *testing.T) {
 		&blockingLLM{started: make(chan struct{})},
 		&testTTS{},
 		control,
+		nil,
 		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
 		nil,
 		nil,
@@ -284,6 +332,7 @@ func TestResponseRuntimeStartAssistantTurnCompletesGreeting(t *testing.T) {
 		&testLLM{},
 		tts,
 		control,
+		nil,
 		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
 		nil,
 		nil,
@@ -314,6 +363,89 @@ func TestResponseRuntimeStartAssistantTurnCompletesGreeting(t *testing.T) {
 	}
 	if !foundStarted || !foundCompleted {
 		t.Fatalf("expected opening turn events, got %+v", control.pending["sess_1"])
+	}
+}
+
+func TestResponseRuntimeSchedulesSessionEndAfterToolDirective(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	task := manager.Create("sess_1")
+	if err := task.BeginNegotiation(); err != nil {
+		t.Fatalf("begin negotiation: %v", err)
+	}
+	if err := task.MarkActive(); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	turnID := ensureTestTurn(t, task)
+	ender := &captureEnder{}
+	runtime := newResponseRuntime(
+		"sess_1",
+		manager,
+		&directiveLLM{
+			reason:  "reservation_confirmed",
+			message: "本次预订已完成，通话即将结束。",
+			events: []adapters.LLMEvent{
+				{Text: "花园双床房已为您预订成功，确认号 res_000001。"},
+				{Final: true},
+			},
+		},
+		&testTTS{},
+		newControlRuntime(manager, slog.Default()),
+		ender,
+		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
+		nil,
+		nil,
+		slog.Default(),
+	)
+
+	runtime.HandleASREvent(turnID, adapters.ASREvent{Text: "帮我预订", Final: true})
+	waitTaskActive(t, task)
+
+	if ender.count != 1 {
+		t.Fatalf("expected one scheduled end, got %d", ender.count)
+	}
+	if ender.sessionID != "sess_1" || ender.reason != "reservation_confirmed" {
+		t.Fatalf("unexpected end request: %+v", ender)
+	}
+}
+
+func TestResponseRuntimeIgnoresEndCallDirectiveWhenReplyIsNotTerminal(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	task := manager.Create("sess_1")
+	if err := task.BeginNegotiation(); err != nil {
+		t.Fatalf("begin negotiation: %v", err)
+	}
+	if err := task.MarkActive(); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	turnID := ensureTestTurn(t, task)
+	ender := &captureEnder{}
+	runtime := newResponseRuntime(
+		"sess_1",
+		manager,
+		&directiveLLM{
+			reason:  "bot_farewell",
+			message: "Bot 已完成结束语，通话即将结束。",
+			events: []adapters.LLMEvent{
+				{Text: "请告诉我您的姓名和手机号。"},
+				{Final: true},
+			},
+		},
+		&testTTS{},
+		newControlRuntime(manager, slog.Default()),
+		ender,
+		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
+		nil,
+		nil,
+		slog.Default(),
+	)
+
+	runtime.HandleASREvent(turnID, adapters.ASREvent{Text: "帮我预订", Final: true})
+	waitTaskActive(t, task)
+
+	if ender.count != 0 {
+		t.Fatalf("expected no scheduled end for non-terminal reply, got %+v", ender)
 	}
 }
 

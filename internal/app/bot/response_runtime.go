@@ -18,6 +18,7 @@ type responseRuntime struct {
 	llm       adapters.LLMAdapter
 	tts       adapters.TTSAdapter
 	control   *controlRuntime
+	ender     sessionEnder
 	segmenter config.LLMSegmenterConfig
 	audioOut  *downlinkAudioWriter
 	debugDump *ttsDebugDumper
@@ -31,8 +32,12 @@ type responseRuntime struct {
 
 const maxResponseHistoryMessages = 8
 
-const voiceResponseSystemHint = "电话语音回复要求：必须简短自然，通常一句话，不超过35个汉字；不要寒暄过多，不要重复列清单；记住上文用户已提供的姓名、手机号、房型，不要重复索要。"
+const voiceResponseSystemHint = "电话语音回复要求：必须简短自然，通常一句话，不超过35个汉字；不要寒暄过多，不要重复列清单；记住上文用户已提供的姓名、手机号、房型，不要重复索要。如果你判断当前这句说完后就该结束通话，必须先调用 end_call，再输出最后一句结束语；如果还需要继续追问、确认或解释，就不要调用 end_call。"
 const openingGreetingText = "您好，这里是酒店预订服务，我可以帮您查房型和办理预订，请问您想订什么房型？"
+
+type sessionEnder interface {
+	ScheduleEnd(sessionID string, reason string, message string)
+}
 
 func newResponseRuntime(
 	sessionID string,
@@ -40,6 +45,7 @@ func newResponseRuntime(
 	llm adapters.LLMAdapter,
 	tts adapters.TTSAdapter,
 	control *controlRuntime,
+	ender sessionEnder,
 	segmenter config.LLMSegmenterConfig,
 	audioOut *downlinkAudioWriter,
 	debugDump *ttsDebugDumper,
@@ -51,6 +57,7 @@ func newResponseRuntime(
 		llm:       llm,
 		tts:       tts,
 		control:   control,
+		ender:     ender,
 		segmenter: segmenter,
 		audioOut:  audioOut,
 		debugDump: debugDump,
@@ -137,7 +144,8 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 		return
 	}
 
-	llmEvents, err := r.llm.Complete(ctx, adapters.CompletionRequest{
+	directives := newTurnDirectives()
+	llmEvents, err := r.llm.Complete(withTurnDirectives(ctx, directives), adapters.CompletionRequest{
 		SessionID:  r.sessionID,
 		TurnID:     turnID,
 		Text:       transcript,
@@ -221,6 +229,26 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 	}
 
 	r.completeTurn(turnID, "turn completed after llm and tts pipeline")
+	if endCall, ok := directives.EndCall(); ok && r.ender != nil {
+		if shouldScheduleEndCall(fullText.String(), endCall.Reason) {
+			r.logger.Info(
+				"scheduling session end after current reply",
+				"session_id", r.sessionID,
+				"turn_id", turnID,
+				"reason", endCall.Reason,
+				"message", endCall.Message,
+			)
+			r.ender.ScheduleEnd(r.sessionID, endCall.Reason, endCall.Message)
+		} else {
+			r.logger.Info(
+				"skip end_call because reply does not look terminal",
+				"session_id", r.sessionID,
+				"turn_id", turnID,
+				"reason", endCall.Reason,
+				"text", fullText.String(),
+			)
+		}
+	}
 }
 
 func (r *responseRuntime) runAssistantTurn(ctx context.Context, turnID int64, text string) {
@@ -400,6 +428,21 @@ func (r *responseRuntime) rememberExchange(userText string, assistantText string
 	}
 	if len(r.history) > maxResponseHistoryMessages {
 		r.history = append([]adapters.ConversationMessage(nil), r.history[len(r.history)-maxResponseHistoryMessages:]...)
+	}
+}
+
+func shouldScheduleEndCall(text string, reason string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	switch strings.TrimSpace(reason) {
+	case "reservation_confirmed":
+		return hotelTextLooksConfirmed(text) || strings.Contains(text, "确认号")
+	case "user_declined", "bot_farewell":
+		return hotelTextLooksFarewell(text)
+	default:
+		return hotelTextLooksConfirmed(text) || strings.Contains(text, "确认号") || hotelTextLooksFarewell(text)
 	}
 }
 

@@ -235,3 +235,18 @@ func TestControlRuntimeReadyHandlerCanBeRegistered(t *testing.T) {
 		t.Fatal("expected ready handler to be invoked")
 	}
 }
+
+func TestControlRuntimeEmitsSessionEnding(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	runtime := newControlRuntime(manager, slog.Default())
+
+	runtime.emitSessionEnding("sess_1", "本次预订已完成，通话即将结束。")
+
+	pending := runtime.pending["sess_1"]
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending event, got %d", len(pending))
+	}
+	if pending[0].Type != dcproto.TypeSessionEnding {
+		t.Fatalf("expected session.ending, got %s", pending[0].Type)
+	}
+}

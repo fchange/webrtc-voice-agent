@@ -11,6 +11,7 @@
 - `active`: 音频链路可用，等待用户输入
 - `processing`: 正在处理当前用户 turn
 - `responding`: bot 正在输出语音或事件
+- `responding_with_pending_end`: bot 已通过 `end_call` tool 决定本轮播完后结束通话
 - `closing`: 正在结束会话
 - `closed`: 已结束
 
@@ -87,8 +88,32 @@ stateDiagram-v2
 - 可以将稳定音频片段推进 ASR finalization 或下游 LLM
 - 它不是前端按钮事件
 
+## Tool-Based End Call Rule
+
+主动挂断不再依赖服务端对文案做关键词猜测，改为显式 tool 控制：
+
+1. LLM 在需要结束通话时调用 `end_call`
+2. tool 只写入 turn 级 `pending_end_call` 意图，不立即关闭会话
+3. 当前 turn 继续完成 `llm.final -> tts.segment.* -> downlink drain`
+4. 服务端在当前 bot 结束语实际播完后发出 `session.ending`
+5. 短暂 grace period 后发送 signaling `session.close` 并关闭 WebRTC / session
+
+如果 bot 已写入 `pending_end_call`，但在播完前被用户插话打断，则该 turn 被取消，挂断意图随 turn 一起失效，不进入 `closing`。
+
+```mermaid
+stateDiagram-v2
+    [*] --> active
+    active --> processing: user speech start
+    processing --> responding: asr.final -> llm/tts start
+    responding --> responding_with_pending_end: LLM calls end_call
+    responding_with_pending_end --> active: user barge-in / turn.interrupt
+    responding_with_pending_end --> closing: tts drained + downlink idle
+    closing --> closed: session.close
+```
+
 ## State Constraints
 
 - `closed` 后不可再进入其他状态
 - `closing` 只允许进入 `closed`
 - `responding` 可被 `turn.interrupt` 抢占并回到 `active`
+- `responding_with_pending_end` 本质上仍属于响应中状态，也允许被 `turn.interrupt` 抢占

@@ -116,6 +116,8 @@ function formatDataChannelEvent(message: DataChannelMessage): Pick<TimelineItem,
   switch (message.type) {
     case DataChannelTypes.SessionReady:
       return { label: '控制通道已就绪，服务端可以开始推事件。', detail: 'session.ready', tone: 'accent' };
+    case DataChannelTypes.SessionEnding:
+      return { label: 'Bot 正在主动结束通话。', detail: payloadMessage ?? 'session.ending', tone: 'warn' };
     case DataChannelTypes.TurnStarted:
       return { label: `${turnLabel} 开始收音。`, detail: payloadMessage ?? message.type, tone: 'accent' };
     case DataChannelTypes.TurnInterrupt:

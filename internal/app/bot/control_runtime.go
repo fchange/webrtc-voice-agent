@@ -227,6 +227,17 @@ func (r *controlRuntime) emitTurnCompleted(sessionID string, turnID int64, messa
 	})
 }
 
+func (r *controlRuntime) emitSessionEnding(sessionID string, message string) {
+	r.emit(sessionID, dcproto.Envelope{
+		Version:   dcproto.Version,
+		Type:      dcproto.TypeSessionEnding,
+		SessionID: sessionID,
+		Payload: dcproto.StatusPayload{
+			Message: message,
+		},
+	})
+}
+
 func (r *controlRuntime) emitError(sessionID string, turnID int64, message string) {
 	r.emit(sessionID, dcproto.Envelope{
 		Version:   dcproto.Version,

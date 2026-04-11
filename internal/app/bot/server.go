@@ -370,3 +370,9 @@ func (w *lockedSignalWriter) WriteEnvelope(envelope signaling.Envelope) error {
 	defer w.mu.Unlock()
 	return w.conn.WriteJSON(envelope)
 }
+
+func (w *lockedSignalWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.conn.Close()
+}

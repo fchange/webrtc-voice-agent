@@ -10,6 +10,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/mock"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
+	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
@@ -93,4 +94,40 @@ func TestRTCManagerHandleOfferProducesAnswer(t *testing.T) {
 	}
 
 	t.Fatal("expected answer envelope")
+}
+
+func TestRTCManagerScheduleEndEmitsSessionEndingAndSignalClose(t *testing.T) {
+	sessionManager := session.NewManager(time.Minute)
+	task := sessionManager.Create("sess_1")
+	if err := task.BeginNegotiation(); err != nil {
+		t.Fatalf("begin negotiation: %v", err)
+	}
+	if err := task.MarkActive(); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	control := newControlRuntime(sessionManager, slog.Default())
+	manager := newRTCManager("", slog.Default(), sessionManager, control, mock.NewASR(), mock.NewLLM(), mock.NewTTS(), 16000, 900*time.Millisecond, config.LLMSegmenterConfig{}, config.XFYUNTTSConfig{})
+	writer := &captureWriter{}
+	manager.session["sess_1"] = &rtcSession{signal: writer}
+
+	manager.ScheduleEnd("sess_1", "reservation_confirmed", "本次预订已完成，通话即将结束。")
+
+	pending := control.pending["sess_1"]
+	if len(pending) != 1 || pending[0].Type != dcproto.TypeSessionEnding {
+		t.Fatalf("expected session.ending pending event, got %+v", pending)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := writer.find(signaling.TypeSessionClose); ok {
+			if _, exists := sessionManager.Get("sess_1"); exists {
+				t.Fatal("expected manager session to be ended")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("expected session.close envelope")
 }
