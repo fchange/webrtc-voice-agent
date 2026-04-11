@@ -45,6 +45,7 @@ type rtcManager struct {
 	llmProvider     adapters.LLMAdapter
 	ttsProvider     adapters.TTSAdapter
 	asrSampleRate   uint32
+	endpointSilence time.Duration
 	segmenter       config.LLMSegmenterConfig
 	ttsConfig       config.XFYUNTTSConfig
 	decoderRegistry *audio.Registry
@@ -59,6 +60,7 @@ func newRTCManager(
 	llmProvider adapters.LLMAdapter,
 	ttsProvider adapters.TTSAdapter,
 	asrSampleRate uint32,
+	endpointSilence time.Duration,
 	segmenter config.LLMSegmenterConfig,
 	ttsConfig config.XFYUNTTSConfig,
 ) *rtcManager {
@@ -71,6 +73,9 @@ func newRTCManager(
 
 	registry := audio.NewRegistry()
 	registry.Register(opusaudio.NewFactory())
+	if endpointSilence <= 0 {
+		endpointSilence = 900 * time.Millisecond
+	}
 
 	return &rtcManager{
 		cfg:             cfg,
@@ -82,6 +87,7 @@ func newRTCManager(
 		llmProvider:     llmProvider,
 		ttsProvider:     ttsProvider,
 		asrSampleRate:   asrSampleRate,
+		endpointSilence: endpointSilence,
 		segmenter:       segmenter,
 		ttsConfig:       ttsConfig,
 		decoderRegistry: registry,
@@ -297,7 +303,7 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 			newTTSDebugDumper(m.ttsConfig.DebugDumpDir, m.ttsConfig.PCMEndian),
 			m.logger,
 		)
-		endpointer := newPacketEndpointer(900*time.Millisecond, m.logger.With("session_id", sessionID), endpointingCallbacks{
+		endpointer := newPacketEndpointer(m.endpointSilence, m.logger.With("session_id", sessionID), endpointingCallbacks{
 			onSpeechStart: func() {
 				if m.control != nil {
 					m.control.handleVADStart(sessionID)

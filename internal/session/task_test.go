@@ -39,6 +39,19 @@ func TestTaskInterruptAdvancesTurn(t *testing.T) {
 	if snapshot.State != StateActive {
 		t.Fatalf("expected active state after interrupt, got %s", snapshot.State)
 	}
+	if snapshot.CurrentTurn != 1 {
+		t.Fatalf("expected current turn to remain 1 until next turn starts, got %d", snapshot.CurrentTurn)
+	}
+	nextTurnID, created, err := task.EnsureTurn()
+	if err != nil {
+		t.Fatalf("ensure turn after interrupt: %v", err)
+	}
+	if !created {
+		t.Fatalf("expected next turn to be created after interrupt")
+	}
+	if nextTurnID != 2 {
+		t.Fatalf("expected next actual turn to be 2, got %d", nextTurnID)
+	}
 }
 
 func TestTaskEndClosesSession(t *testing.T) {

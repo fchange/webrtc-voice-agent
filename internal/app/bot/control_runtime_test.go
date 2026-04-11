@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
+	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
@@ -102,5 +104,48 @@ func TestControlRuntimeVADStartAfterInterruptUsesExpectedNextTurn(t *testing.T) 
 	}
 	if snapshot.CurrentTurn != 2 {
 		t.Fatalf("expected next turn to be 2 after interrupt, got %d", snapshot.CurrentTurn)
+	}
+}
+
+func TestControlRuntimeBuffersASREventUntilDataChannelOpens(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	runtime := newControlRuntime(manager, slog.Default())
+
+	runtime.emitASREvent("sess_1", 1, adapters.ASREvent{
+		Text:  "你好",
+		Final: true,
+	})
+
+	pending := runtime.pending["sess_1"]
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending event, got %d", len(pending))
+	}
+	if pending[0].Type != dcproto.TypeASRFinal {
+		t.Fatalf("expected pending asr.final, got %s", pending[0].Type)
+	}
+	payload, ok := pending[0].Payload.(dcproto.TranscriptPayload)
+	if !ok {
+		t.Fatalf("expected transcript payload, got %T", pending[0].Payload)
+	}
+	if payload.Text != "你好" || !payload.Final {
+		t.Fatalf("unexpected transcript payload: %+v", payload)
+	}
+}
+
+func TestAppendPendingEnvelopeKeepsNewestEvents(t *testing.T) {
+	var pending []dcproto.Envelope
+	for i := 0; i < maxPendingControlEvents+3; i++ {
+		pending = appendPendingEnvelope(pending, dcproto.Envelope{
+			Version: dcproto.Version,
+			Type:    dcproto.TypeLLMPartial,
+			TurnID:  int64(i),
+		})
+	}
+
+	if len(pending) != maxPendingControlEvents {
+		t.Fatalf("expected capped pending events, got %d", len(pending))
+	}
+	if pending[0].TurnID != 3 {
+		t.Fatalf("expected oldest retained event to be turn 3, got %d", pending[0].TurnID)
 	}
 }

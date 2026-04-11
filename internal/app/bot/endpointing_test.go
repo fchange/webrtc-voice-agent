@@ -97,3 +97,44 @@ func TestPacketEndpointerDetectsSpeechThenSilenceFromPCM(t *testing.T) {
 	defer mu.Unlock()
 	t.Fatalf("expected start/end/eou callbacks once, got start=%d end=%d eou=%d", speechStarted, speechEnded, utterancesEnded)
 }
+
+func TestPacketEndpointerEndsUtteranceWhileSilenceFramesContinue(t *testing.T) {
+	var mu sync.Mutex
+	utterancesEnded := 0
+
+	endpointer := newPacketEndpointer(30*time.Millisecond, slog.Default(), endpointingCallbacks{
+		onEndOfUtterance: func() {
+			mu.Lock()
+			utterancesEnded++
+			mu.Unlock()
+		},
+	})
+	defer endpointer.Close()
+
+	endpointer.ObserveFrame(audio.PCMFrame{
+		SampleRate: 16000,
+		Channels:   1,
+		Samples:    []int16{2000, -1800, 1700, -1500},
+	})
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		endpointer.ObserveFrame(audio.PCMFrame{
+			SampleRate: 16000,
+			Channels:   1,
+			Samples:    []int16{0, 0, 0, 0},
+		})
+		time.Sleep(5 * time.Millisecond)
+
+		mu.Lock()
+		ended := utterancesEnded
+		mu.Unlock()
+		if ended == 1 {
+			return
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("expected end-of-utterance while silence frames continue, got %d", utterancesEnded)
+}

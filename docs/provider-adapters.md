@@ -8,16 +8,33 @@ ASR / LLM / TTS 必须通过统一 adapter 接口接入，避免把 SessionTask 
 
 - VAD: ModelScope `damo/speech_fsmn_vad_zh-cn-16k-common-pytorch`
 - ASR: 讯飞 `spark_zh_iat` WebSocket API
-- LLM: OpenAI-compatible `chat/completions` 流式接口
+- LLM: OpenAI-compatible `chat/completions` 流式接口（可直连火山 Ark）
 - TTS: 讯飞在线语音合成 WebSocket API
 
 选择原因：
 
 - FSMN VAD 更适合低时延 turn 切分，不把 VAD 和 ASR 绑死
 - 讯飞实时听写 WebSocket 接口适合流式语音上行
-- OpenAI-compatible `chat/completions` 接口适合快速接入流式 token 输出
+- OpenAI-compatible `chat/completions` 接口适合快速接入流式 token 输出（火山 Ark 也兼容该格式）
 - 讯飞在线语音合成适合按句段触发的流式合成
 - 两者都适合当前中文实时语音对话 MVP
+
+## Volc/Doubao Providers
+
+为了支持国内可用的 ASR/TTS/LLM，我们补充了火山（豆包）provider：
+
+- ASR: `ASR_PROVIDER=volc-doubao-asr`
+  - 基于火山 “大模型流式语音识别” WebSocket（二进制协议）
+  - 当前默认接入流式输入模式 `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream`
+  - 该模式会在音频超过 15s 或发送最后一个负包后返回结果，通常比双向流式模式更稳
+  - 通过 Header 传 `X-Api-App-Key / X-Api-Access-Key / X-Api-Resource-Id`
+  - `ASR_VOLC_RESOURCE_ID` 推荐使用官方文档中的 `volc.bigasr.sauc.duration`
+- TTS: `TTS_PROVIDER=volc-doubao-tts`
+  - 基于火山在线语音合成 HTTP 接口（一次性合成，返回 base64 音频）
+  - `TTS_VOLC_RESOURCE_ID` 默认使用 `volc.service_type.10029`
+- LLM: 仍使用 `LLM_PROVIDER=openai-compatible-chat-completions`
+  - 只需要把 `LLM_OPENAI_COMPAT_BASE_URL` 指向 Ark（`/api/v3/chat/completions`）并填 `Bearer token`
+  - 如果目标实现是严格 OpenAI 参数校验，建议把 `LLM_OPENAI_COMPAT_TOP_K=0`（避免发送非标准字段）
 
 ## Current Code Status
 
@@ -79,9 +96,11 @@ ASR / LLM / TTS 必须通过统一 adapter 接口接入，避免把 SessionTask 
 
 - VAD 配置使用 `VAD_*` 前缀
 - 讯飞实时听写配置使用 `ASR_XFYUN_*` 前缀
+- 火山 ASR 配置使用 `ASR_VOLC_*` 前缀
 - OpenAI-compatible LLM 配置使用 `LLM_OPENAI_COMPAT_*` 前缀
 - 句段切分配置使用 `LLM_SEGMENTER_*` 前缀
 - 讯飞 TTS 配置使用 `TTS_XFYUN_*` 前缀
+- 火山 TTS 配置使用 `TTS_VOLC_*` 前缀
 - `TTS_XFYUN_PCM_ENDIAN` 用于声明 provider 返回的 `audio/L16` 字节序，当前默认按 `little` 处理
 - `TTS_DEBUG_DUMP_DIR` 可打开 TTS 调试导出，按 segment 落 `raw` / `wav` / `txt`
 - 调试导出还会额外生成 `be_16k / le_16k / be_8k / le_8k` 四个 WAV 变体，便于快速判断真实 sample rate 与 endian

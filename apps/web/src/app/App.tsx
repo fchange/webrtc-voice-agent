@@ -7,6 +7,7 @@ type DemoPage = 'call' | 'hotel';
 type TimelineItem = {
   id: number;
   label: string;
+  timestamp: string;
 };
 
 type RoomType = {
@@ -79,13 +80,26 @@ function formatServiceStatus(value: string): string {
   );
 }
 
+function formatTimelineTimestamp(value: Date): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(value);
+}
+
 export function App() {
   const nextTimelineID = useRef(2);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [page, setPage] = useState<DemoPage>(getPageFromHash);
   const [timeline, setTimeline] = useState<TimelineItem[]>([
-    { id: 1, label: '酒店预订 Demo 已就绪，语音会话与库存服务现在可以一起联调。' },
+    {
+      id: 1,
+      label: '酒店预订 Demo 已就绪，语音会话与库存服务现在可以一起联调。',
+      timestamp: formatTimelineTimestamp(new Date()),
+    },
   ]);
   const [sessionId, setSessionId] = useState<string>('');
   const [status, setStatus] = useState<string>('idle');
@@ -172,7 +186,14 @@ export function App() {
   function appendTimeline(label: string) {
     const id = nextTimelineID.current;
     nextTimelineID.current += 1;
-    setTimeline((items) => [{ id, label }, ...items]);
+    setTimeline((items) => [
+      {
+        id,
+        label,
+        timestamp: formatTimelineTimestamp(new Date()),
+      },
+      ...items,
+    ]);
   }
 
   async function startSession(localSource?: LocalSessionSource) {
@@ -334,7 +355,10 @@ export function App() {
               </summary>
               <ul className="timeline">
                 {timeline.map((item) => (
-                  <li key={item.id}>{item.label}</li>
+                  <li key={item.id}>
+                    <span className="timelineTimestamp">{item.timestamp}</span>
+                    <span>{item.label}</span>
+                  </li>
                 ))}
               </ul>
             </details>

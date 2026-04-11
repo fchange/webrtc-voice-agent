@@ -148,13 +148,12 @@ func (t *Task) Interrupt(reason string) (InterruptResult, error) {
 	}
 
 	current := t.currentTurn
-	t.currentTurn++
 	t.state = StateActive
 	t.touch()
 
 	return InterruptResult{
 		InterruptedTurnID: current,
-		NextTurnID:        t.currentTurn,
+		NextTurnID:        current + 1,
 		Reason:            reason,
 	}, nil
 }

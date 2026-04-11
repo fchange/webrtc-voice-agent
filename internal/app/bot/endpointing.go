@@ -49,7 +49,7 @@ func (e *packetEndpointer) ObserveFrame(frame audio.PCMFrame) {
 	rms := frameRMS(frame)
 	if rms < e.threshold {
 		if e.active {
-			e.resetSilenceTimerLocked()
+			e.startSilenceTimerLocked()
 		}
 		return
 	}
@@ -91,20 +91,16 @@ func (e *packetEndpointer) Close() {
 	}
 }
 
-func (e *packetEndpointer) resetSilenceTimerLocked() {
-	if e.silenceTimer == nil {
-		e.logger.Info(
-			"packet endpointing silence window started",
-			"silence_after_ms", e.silenceAfter.Milliseconds(),
-		)
-		e.silenceTimer = time.AfterFunc(e.silenceAfter, e.handleSilenceTimeout)
+func (e *packetEndpointer) startSilenceTimerLocked() {
+	if e.silenceTimer != nil {
 		return
 	}
 
-	if !e.silenceTimer.Stop() {
-		return
-	}
-	e.silenceTimer.Reset(e.silenceAfter)
+	e.logger.Info(
+		"packet endpointing silence window started",
+		"silence_after_ms", e.silenceAfter.Milliseconds(),
+	)
+	e.silenceTimer = time.AfterFunc(e.silenceAfter, e.handleSilenceTimeout)
 }
 
 func (e *packetEndpointer) handleSilenceTimeout() {

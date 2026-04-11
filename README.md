@@ -104,7 +104,7 @@ make run-web
 - Web 端真实 `offer / answer / ice` 协商
 - `control` DataChannel 双向事件流
 - 服务端权威 endpointing placeholder
-- `Opus -> PCM -> 16k mono -> XFYUN ASR` 接线骨架
+- `Opus -> PCM -> 16k mono -> ASR provider` 接线骨架
 - 浏览器实测可收到 `session.ready / turn.started / vad.started / asr.final`
 - SessionManager / SessionTask 最小状态机
 - 文档、脚本、测试和 smoke 联调工具

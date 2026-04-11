@@ -62,7 +62,7 @@ func TestRTCManagerHandleOfferProducesAnswer(t *testing.T) {
 
 	sessionManager := session.NewManager(time.Minute)
 	control := newControlRuntime(sessionManager, slog.Default())
-	manager := newRTCManager("", slog.Default(), sessionManager, control, mock.NewASR(), mock.NewLLM(), mock.NewTTS(), 16000, config.LLMSegmenterConfig{}, config.XFYUNTTSConfig{})
+	manager := newRTCManager("", slog.Default(), sessionManager, control, mock.NewASR(), mock.NewLLM(), mock.NewTTS(), 16000, 900*time.Millisecond, config.LLMSegmenterConfig{}, config.XFYUNTTSConfig{})
 	writer := &captureWriter{}
 
 	if err := manager.HandleOffer("sess_1", signaling.SDPPayload{

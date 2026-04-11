@@ -17,6 +17,7 @@ type controlRuntime struct {
 	logger      *slog.Logger
 	mu          sync.Mutex
 	channels    map[string]*webrtc.DataChannel
+	pending     map[string][]dcproto.Envelope
 	onInterrupt func(sessionID string)
 }
 
@@ -25,8 +26,11 @@ func newControlRuntime(manager *session.Manager, logger *slog.Logger) *controlRu
 		manager:  manager,
 		logger:   logger,
 		channels: make(map[string]*webrtc.DataChannel),
+		pending:  make(map[string][]dcproto.Envelope),
 	}
 }
+
+const maxPendingControlEvents = 64
 
 func (r *controlRuntime) setInterruptHandler(handler func(sessionID string)) {
 	r.mu.Lock()
@@ -47,6 +51,8 @@ func (r *controlRuntime) bind(sessionID string, channel *webrtc.DataChannel) {
 		}
 		r.mu.Lock()
 		r.channels[sessionID] = channel
+		pending := append([]dcproto.Envelope(nil), r.pending[sessionID]...)
+		delete(r.pending, sessionID)
 		r.mu.Unlock()
 
 		r.send(channel, dcproto.Envelope{
@@ -57,6 +63,9 @@ func (r *controlRuntime) bind(sessionID string, channel *webrtc.DataChannel) {
 				Message: "session ready",
 			},
 		})
+		for _, envelope := range pending {
+			r.send(channel, envelope)
+		}
 	})
 
 	channel.OnClose(func() {
@@ -393,12 +402,23 @@ func (r *controlRuntime) send(channel *webrtc.DataChannel, envelope dcproto.Enve
 func (r *controlRuntime) emit(sessionID string, envelope dcproto.Envelope) {
 	r.mu.Lock()
 	channel := r.channels[sessionID]
+	if channel == nil {
+		r.pending[sessionID] = appendPendingEnvelope(r.pending[sessionID], envelope)
+	}
 	r.mu.Unlock()
 
 	if channel == nil {
 		return
 	}
 	r.send(channel, envelope)
+}
+
+func appendPendingEnvelope(events []dcproto.Envelope, envelope dcproto.Envelope) []dcproto.Envelope {
+	events = append(events, envelope)
+	if len(events) <= maxPendingControlEvents {
+		return events
+	}
+	return append([]dcproto.Envelope(nil), events[len(events)-maxPendingControlEvents:]...)
 }
 
 func (r *controlRuntime) sendError(channel *webrtc.DataChannel, sessionID string, message string) {
