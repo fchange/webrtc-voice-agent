@@ -149,6 +149,71 @@ func TestCompleteRunsToolCallLoop(t *testing.T) {
 	}
 }
 
+func TestCompleteFiltersToolsPerRequest(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		var req chatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(req.Tools) != 1 || req.Tools[0].Function.Name != "list_room_types" {
+			t.Fatalf("availability request should expose only list_room_types, got %+v", req.Tools)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(chatCompletionResponse{
+			Choices: []chatResponseChoice{
+				{
+					FinishReason: "stop",
+					Message: chatMessage{
+						Role:    "assistant",
+						Content: "没有总统套房。",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewLLM(configForTest(), nil).WithTools([]Tool{
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name: "list_room_types",
+			},
+			Handler: func(context.Context, json.RawMessage) (any, error) {
+				return map[string]any{"room_types": []any{}}, nil
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name: "create_reservation",
+			},
+			ShouldUse: func(adapters.CompletionRequest) bool {
+				return false
+			},
+			Handler: func(context.Context, json.RawMessage) (any, error) {
+				t.Fatal("reservation tool should not be callable for availability request")
+				return nil, nil
+			},
+		},
+	})
+	provider.cfg.BaseURL = server.URL
+
+	events, err := provider.Complete(t.Context(), adapters.CompletionRequest{Text: "总统套房还有几间"})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	for range events {
+	}
+	if requestCount != 1 {
+		t.Fatalf("expected one request, got %d", requestCount)
+	}
+}
+
 func configForTest() config.OpenAICompatibleLLMConfig {
 	return config.OpenAICompatibleLLMConfig{
 		BaseURL:   "https://example.com/v1/chat/completions",
