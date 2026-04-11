@@ -231,6 +231,41 @@ func (r *controlRuntime) handleVADStart(sessionID string) {
 		return
 	}
 
+	snapshot := task.Snapshot()
+	if snapshot.State == session.StateResponding {
+		result, err := task.Interrupt("server_vad_barge_in")
+		if err != nil {
+			r.logger.Error("server vad interrupt failed", "session_id", sessionID, "turn_id", snapshot.CurrentTurn, "err", err)
+			return
+		}
+
+		r.logger.Info("emitting bot.speaking.stopped from server vad barge-in", "session_id", sessionID, "turn_id", result.InterruptedTurnID)
+		r.emit(sessionID, dcproto.Envelope{
+			Version:   dcproto.Version,
+			Type:      dcproto.TypeBotSpeakingStop,
+			SessionID: sessionID,
+			TurnID:    result.InterruptedTurnID,
+			Payload: dcproto.StatusPayload{
+				Message: "bot speaking stopped by server vad barge-in",
+			},
+		})
+		r.logger.Info("emitting turn.interrupt from server vad barge-in", "session_id", sessionID, "turn_id", result.InterruptedTurnID, "next_turn_id", result.NextTurnID)
+		r.emit(sessionID, dcproto.Envelope{
+			Version:   dcproto.Version,
+			Type:      dcproto.TypeTurnInterrupt,
+			SessionID: sessionID,
+			TurnID:    result.InterruptedTurnID,
+			Payload:   result,
+		})
+
+		r.mu.Lock()
+		handler := r.onInterrupt
+		r.mu.Unlock()
+		if handler != nil {
+			handler(sessionID)
+		}
+	}
+
 	turnID, created, err := task.EnsureTurn()
 	if err != nil {
 		r.logger.Error("server vad start failed", "session_id", sessionID, "err", err)

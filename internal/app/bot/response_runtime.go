@@ -140,6 +140,11 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 		}
 	}
 
+	if ctx.Err() != nil {
+		r.logger.Info("response turn cancelled before tts finalization", "session_id", r.sessionID, "turn_id", turnID, "err", ctx.Err())
+		return
+	}
+
 	if tail := segmenter.Flush(); tail != "" {
 		if !speaking {
 			speaking = true
@@ -153,6 +158,11 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 		r.control.emitBotSpeakingStopped(r.sessionID, turnID, "tts segment synthesis drained")
 	}
 
+	if ctx.Err() != nil {
+		r.logger.Info("response turn cancelled before completion", "session_id", r.sessionID, "turn_id", turnID, "err", ctx.Err())
+		return
+	}
+
 	if r.control != nil {
 		r.control.emitLLMEvent(r.sessionID, turnID, adapters.LLMEvent{
 			Text:  fullText.String(),
@@ -162,6 +172,10 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 	r.rememberExchange(transcript, fullText.String())
 	if speaking && r.audioOut != nil {
 		r.audioOut.WaitIdle()
+	}
+	if ctx.Err() != nil {
+		r.logger.Info("response turn cancelled after audio drain", "session_id", r.sessionID, "turn_id", turnID, "err", ctx.Err())
+		return
 	}
 	if speaking && r.control != nil {
 		r.control.emitBotSpeakingStopped(r.sessionID, turnID, "response pipeline finished")

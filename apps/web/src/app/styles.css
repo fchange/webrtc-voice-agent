@@ -348,12 +348,40 @@ select {
   align-items: flex-start;
 }
 
+.timelineItem {
+  padding: 0.2rem 0;
+}
+
+.timelineItemAccent .timelineLabel {
+  color: #163a59;
+}
+
+.timelineItemWarn .timelineLabel {
+  color: #8f3d28;
+}
+
 .timelineTimestamp {
   flex: 0 0 auto;
   min-width: 4.8rem;
   color: #7b6b56;
   font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
+}
+
+.timelineBody {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.timelineLabel {
+  color: #22384d;
+}
+
+.timelineDetail {
+  color: #6a7783;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 @media (max-width: 640px) {

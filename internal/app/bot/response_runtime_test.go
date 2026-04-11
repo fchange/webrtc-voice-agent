@@ -9,6 +9,7 @@ import (
 
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
+	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
@@ -64,6 +65,33 @@ func (t *testTTS) Synthesize(ctx context.Context, req adapters.SynthesisRequest)
 		case out <- adapters.TTSEvent{Chunk: adapters.AudioChunk{PCM: []byte("ok")}, Final: true}:
 		}
 	}()
+	return out, nil
+}
+
+type blockingLLM struct {
+	started chan struct{}
+}
+
+func (b *blockingLLM) Name() string {
+	return "blocking-llm"
+}
+
+func (b *blockingLLM) Complete(ctx context.Context, _ adapters.CompletionRequest) (<-chan adapters.LLMEvent, error) {
+	out := make(chan adapters.LLMEvent, 1)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			return
+		case out <- adapters.LLMEvent{Text: "好的。"}:
+		}
+		select {
+		case <-ctx.Done():
+		}
+	}()
+	if b.started != nil {
+		close(b.started)
+	}
 	return out, nil
 }
 
@@ -177,6 +205,64 @@ func TestResponseRuntimeIncludesRecentHistoryInNextCompletion(t *testing.T) {
 	}
 	if second.History[0].Role != "user" || second.History[0].Text != "我叫张三" {
 		t.Fatalf("expected first history item to remember user name, got %#v", second.History)
+	}
+}
+
+func TestResponseRuntimeCancelledRunDoesNotCompleteOldTurn(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	task := manager.Create("sess_1")
+	if err := task.BeginNegotiation(); err != nil {
+		t.Fatalf("begin negotiation: %v", err)
+	}
+	if err := task.MarkActive(); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	turnID := ensureTestTurn(t, task)
+	control := newControlRuntime(manager, slog.Default())
+	runtime := newResponseRuntime(
+		"sess_1",
+		manager,
+		&blockingLLM{started: make(chan struct{})},
+		&testTTS{},
+		control,
+		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
+		nil,
+		nil,
+		slog.Default(),
+	)
+
+	blocking := runtime.llm.(*blockingLLM)
+	runtime.HandleASREvent(turnID, adapters.ASREvent{Text: "用户输入", Final: true})
+
+	select {
+	case <-blocking.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected llm request to start")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if task.Snapshot().State == session.StateResponding {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := task.Snapshot().State; got != session.StateResponding {
+		t.Fatalf("expected responding before interrupt, got %s", got)
+	}
+
+	if _, err := task.Interrupt("server_vad_barge_in"); err != nil {
+		t.Fatalf("interrupt task: %v", err)
+	}
+	runtime.Interrupt()
+
+	time.Sleep(100 * time.Millisecond)
+
+	for _, envelope := range control.pending["sess_1"] {
+		if envelope.Type == dcproto.TypeTurnCompleted {
+			t.Fatalf("expected cancelled run not to emit turn.completed, got %+v", envelope)
+		}
 	}
 }
 

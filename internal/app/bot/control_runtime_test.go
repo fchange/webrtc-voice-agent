@@ -107,6 +107,70 @@ func TestControlRuntimeVADStartAfterInterruptUsesExpectedNextTurn(t *testing.T) 
 	}
 }
 
+func TestControlRuntimeVADStartDuringResponseInterruptsAndStartsNextTurn(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	task := manager.Create("sess_1")
+	if err := task.BeginNegotiation(); err != nil {
+		t.Fatalf("begin negotiation: %v", err)
+	}
+	if err := task.MarkActive(); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	turnID, created, err := task.EnsureTurn()
+	if err != nil || !created {
+		t.Fatalf("ensure turn failed: created=%v err=%v", created, err)
+	}
+	if err := task.StartResponse(turnID); err != nil {
+		t.Fatalf("start response: %v", err)
+	}
+
+	runtime := newControlRuntime(manager, slog.Default())
+	interrupted := false
+	runtime.setInterruptHandler(func(sessionID string) {
+		if sessionID == "sess_1" {
+			interrupted = true
+		}
+	})
+
+	runtime.handleVADStart("sess_1")
+
+	if !interrupted {
+		t.Fatal("expected interrupt handler to be invoked")
+	}
+
+	snapshot := task.Snapshot()
+	if snapshot.State != session.StateProcessing {
+		t.Fatalf("expected processing after barge-in vad start, got %s", snapshot.State)
+	}
+	if snapshot.CurrentTurn != 2 {
+		t.Fatalf("expected next turn 2 after barge-in, got %d", snapshot.CurrentTurn)
+	}
+
+	pending := runtime.pending["sess_1"]
+	if len(pending) != 4 {
+		t.Fatalf("expected 4 pending events, got %d", len(pending))
+	}
+	if pending[0].Type != dcproto.TypeBotSpeakingStop {
+		t.Fatalf("expected first event bot.speaking.stopped, got %s", pending[0].Type)
+	}
+	if pending[1].Type != dcproto.TypeTurnInterrupt {
+		t.Fatalf("expected second event turn.interrupt, got %s", pending[1].Type)
+	}
+	if pending[2].Type != dcproto.TypeTurnStarted {
+		t.Fatalf("expected third event turn.started, got %s", pending[2].Type)
+	}
+	if pending[3].Type != dcproto.TypeVADStarted {
+		t.Fatalf("expected fourth event vad.started, got %s", pending[3].Type)
+	}
+	if pending[1].TurnID != 1 {
+		t.Fatalf("expected interrupt event on turn 1, got %d", pending[1].TurnID)
+	}
+	if pending[2].TurnID != 2 || pending[3].TurnID != 2 {
+		t.Fatalf("expected new turn events on turn 2, got started=%d vad=%d", pending[2].TurnID, pending[3].TurnID)
+	}
+}
+
 func TestControlRuntimeBuffersASREventUntilDataChannelOpens(t *testing.T) {
 	manager := session.NewManager(time.Minute)
 	runtime := newControlRuntime(manager, slog.Default())

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { DataChannelTypes, type DataChannelMessage } from '../features/protocol/messages';
 import { createDefaultClientConfig, SignalingClient } from '../features/signaling/signaling-client';
 import { type LocalSessionSource, VoiceSessionController } from '../features/webrtc/voice-session';
 
@@ -8,6 +9,8 @@ type TimelineItem = {
   id: number;
   label: string;
   timestamp: string;
+  detail?: string;
+  tone?: 'default' | 'accent' | 'warn';
 };
 
 type RoomType = {
@@ -89,6 +92,111 @@ function formatTimelineTimestamp(value: Date): string {
   }).format(value);
 }
 
+function extractString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+function extractNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function clipText(value: string, max = 48): string {
+  return value.length <= max ? value : `${value.slice(0, max)}...`;
+}
+
+function formatDataChannelEvent(message: DataChannelMessage): Pick<TimelineItem, 'label' | 'detail' | 'tone'> {
+  const turnLabel = message.turn_id ? `Turn ${message.turn_id}` : 'Session';
+  const payload = message.payload ?? {};
+  const payloadMessage = extractString((payload as Record<string, unknown>).message);
+  const payloadText = extractString((payload as Record<string, unknown>).text);
+  const nextTurnID = extractNumber((payload as Record<string, unknown>).next_turn_id);
+  const segmentID = extractNumber((payload as Record<string, unknown>).segment_id);
+  const source = extractString((payload as Record<string, unknown>).source);
+
+  switch (message.type) {
+    case DataChannelTypes.SessionReady:
+      return { label: '控制通道已就绪，服务端可以开始推事件。', detail: 'session.ready', tone: 'accent' };
+    case DataChannelTypes.TurnStarted:
+      return { label: `${turnLabel} 开始收音。`, detail: payloadMessage ?? message.type, tone: 'accent' };
+    case DataChannelTypes.TurnInterrupt:
+      return {
+        label: nextTurnID ? `${turnLabel} 被打断，切换到 Turn ${nextTurnID}。` : `${turnLabel} 被打断。`,
+        detail: `turn.interrupt${payloadMessage ? ` · ${payloadMessage}` : ''}`,
+        tone: 'warn',
+      };
+    case DataChannelTypes.TurnCancelled:
+      return { label: `${turnLabel} 已取消。`, detail: message.type, tone: 'warn' };
+    case DataChannelTypes.TurnEndOfUtterance:
+      return {
+        label: `${turnLabel} 检测到一句话结束。`,
+        detail: source ? `turn.end_of_utterance · ${source}` : message.type,
+      };
+    case DataChannelTypes.TurnCompleted:
+      return { label: `${turnLabel} 回复完成。`, detail: payloadMessage ?? message.type, tone: 'accent' };
+    case DataChannelTypes.BotSpeakingStarted:
+      return { label: `${turnLabel} Bot 开始说话。`, detail: payloadMessage ?? message.type, tone: 'accent' };
+    case DataChannelTypes.BotSpeakingStopped:
+      return { label: `${turnLabel} Bot 停止说话。`, detail: payloadMessage ?? message.type };
+    case DataChannelTypes.VADStarted:
+      return { label: `${turnLabel} 检测到用户开口。`, detail: payloadMessage ?? message.type, tone: 'accent' };
+    case DataChannelTypes.VADStopped:
+      return { label: `${turnLabel} 检测到用户停顿。`, detail: payloadMessage ?? message.type };
+    case DataChannelTypes.ASRPartial:
+      return {
+        label: `${turnLabel} 识别中：${payloadText ? clipText(payloadText) : '...'}`,
+        detail: 'asr.partial',
+      };
+    case DataChannelTypes.ASRFinal:
+      return {
+        label: `${turnLabel} 用户说的是：${payloadText ? clipText(payloadText) : '未识别到文本'}`,
+        detail: 'asr.final',
+        tone: 'accent',
+      };
+    case DataChannelTypes.LLMPartial:
+      return {
+        label: `${turnLabel} LLM 生成中：${payloadText ? clipText(payloadText) : '...'}`,
+        detail: 'llm.partial',
+      };
+    case DataChannelTypes.LLMFinal:
+      return {
+        label: `${turnLabel} LLM 最终回复：${payloadText ? clipText(payloadText) : '无文本'}`,
+        detail: 'llm.final',
+      };
+    case DataChannelTypes.TTSSegmentStarted:
+      return {
+        label: `${turnLabel} TTS 片段 ${segmentID ?? '-'} 开始合成。`,
+        detail: payloadText ? clipText(payloadText) : message.type,
+      };
+    case DataChannelTypes.TTSSegmentCompleted:
+      return {
+        label: `${turnLabel} TTS 片段 ${segmentID ?? '-'} 合成完成。`,
+        detail: payloadText ? clipText(payloadText) : message.type,
+      };
+    case DataChannelTypes.Error:
+      return { label: `${turnLabel} 发生错误。`, detail: payloadMessage ?? message.type, tone: 'warn' };
+    default:
+      return {
+        label: `${turnLabel} 收到 ${message.type}。`,
+        detail: JSON.stringify(message.payload),
+      };
+  }
+}
+
+function formatTimelineMessage(message: string): Pick<TimelineItem, 'label' | 'detail' | 'tone'> {
+  const prefix = 'DataChannel message: ';
+  if (!message.startsWith(prefix)) {
+    return { label: message };
+  }
+
+  const raw = message.slice(prefix.length);
+  try {
+    const parsed = JSON.parse(raw) as DataChannelMessage;
+    return formatDataChannelEvent(parsed);
+  } catch {
+    return { label: message, detail: 'unparsed control payload' };
+  }
+}
+
 export function App() {
   const nextTimelineID = useRef(2);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -99,6 +207,8 @@ export function App() {
       id: 1,
       label: '酒店预订 Demo 已就绪，语音会话与库存服务现在可以一起联调。',
       timestamp: formatTimelineTimestamp(new Date()),
+      detail: 'system',
+      tone: 'accent',
     },
   ]);
   const [sessionId, setSessionId] = useState<string>('');
@@ -183,14 +293,17 @@ export function App() {
     };
   }, []);
 
-  function appendTimeline(label: string) {
+  function appendTimeline(message: string) {
+    const entry = formatTimelineMessage(message);
     const id = nextTimelineID.current;
     nextTimelineID.current += 1;
     setTimeline((items) => [
       {
         id,
-        label,
+        label: entry.label,
+        detail: entry.detail,
         timestamp: formatTimelineTimestamp(new Date()),
+        tone: entry.tone,
       },
       ...items,
     ]);
@@ -355,9 +468,12 @@ export function App() {
               </summary>
               <ul className="timeline">
                 {timeline.map((item) => (
-                  <li key={item.id}>
+                  <li key={item.id} className={item.tone === 'warn' ? 'timelineItem timelineItemWarn' : item.tone === 'accent' ? 'timelineItem timelineItemAccent' : 'timelineItem'}>
                     <span className="timelineTimestamp">{item.timestamp}</span>
-                    <span>{item.label}</span>
+                    <div className="timelineBody">
+                      <span className="timelineLabel">{item.label}</span>
+                      {item.detail ? <small className="timelineDetail">{item.detail}</small> : null}
+                    </div>
                   </li>
                 ))}
               </ul>

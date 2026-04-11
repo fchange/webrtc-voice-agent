@@ -49,6 +49,30 @@ bot 收到 hint 后：
 2. 结合服务端 VAD 和当前 bot speaking 状态做最终判断
 3. 只有判定用户真实 barge-in 时，才升级为 `turn.interrupt`
 
+## Automatic Barge-In Rule
+
+当 session 处于 `responding`，且服务端检测到用户重新开口时，不得继续复用当前 turn。
+
+正确流转是：
+
+1. 服务端将当前 bot turn 标记为 interrupted
+2. 立即停止当前 TTS / 下游回复任务
+3. session 从 `responding` 回到 `active`
+4. 立刻创建下一轮 turn，并进入 `processing`
+5. 用户插话音频进入 next turn 的 ASR / LLM / TTS
+
+如果继续把插话语音挂到旧 turn，会出现“旧回复正在收尾，而新 `asr.final` 也试图在同一个 turn 上启动回复”的冲突，最终表现为新问题无法顺利进入 LLM / TTS。
+
+```mermaid
+stateDiagram-v2
+    [*] --> active
+    active --> processing: user speech start
+    processing --> responding: asr.final -> StartResponse()
+    responding --> active: turn.interrupt
+    active --> processing: EnsureTurn(next turn)
+    processing --> responding: next turn response
+```
+
 ## End Of Utterance Rule
 
 `turn.end_of_utterance` 只能由服务端产生。它表示：

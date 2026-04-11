@@ -51,6 +51,61 @@
 8. TTS audio chunk 流式回推客户端
 9. interrupt 到来时，先 cancel TTS，再取消当前轮未完成任务
 
+## Automatic Barge-In Sequence
+
+当 bot 正在说话时，用户再次开口的推荐时序如下：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client Mic/Local VAD Hint
+    participant R as WebRTC Ingress/PCM
+    participant V as Server VAD+Barge-in Arbiter
+    participant S as SessionTask
+    participant A as ASR
+    participant L as LLM
+    participant T as TTS/Downlink
+
+    U->>C: 开口说话
+    C->>R: 持续发送上行音频
+    C-->>V: 可选 local vad hint
+    R->>V: PCM frame
+
+    alt session 处于 active
+        V->>S: EnsureTurn()
+        S-->>V: active -> processing
+        V-->>C: turn.started / vad.started
+        V->>A: HandleSpeechStart(turn)
+    else session 处于 responding 且确认用户插话
+        V->>S: Interrupt(old turn)
+        S-->>V: responding -> active
+        V-->>C: bot.speaking.stopped / turn.interrupt
+        V->>S: EnsureTurn(next turn)
+        S-->>V: active -> processing
+        V-->>C: turn.started(next) / vad.started(next)
+        V->>A: HandleSpeechStart(next turn)
+    end
+
+    loop 用户继续说完一句话
+        R->>A: PCM chunk
+        A-->>C: asr.partial
+    end
+
+    V-->>C: vad.stopped / turn.end_of_utterance
+    A-->>C: asr.final
+    S->>L: StartResponse()
+    L->>T: LLM -> TTS
+    T-->>C: bot.speaking.started
+```
+
+实现约束：
+
+- `responding` 状态下检测到用户重新开口时，必须先切断旧 turn，再创建 next turn
+- 不允许把插话语音继续记到旧 turn
+- 被 interrupt 的回复链不得继续 emit `turn.completed`
+- 客户端 local VAD 只用于加速 hint，最终裁决依旧在服务端
+
 ## Rules
 
 - 客户端不得单方面认定 turn 已结束
