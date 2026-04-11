@@ -2,6 +2,7 @@ package hotel
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,8 @@ type Store struct {
 	reservations []Reservation
 	nextID       int64
 }
+
+var mainlandMobilePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
 
 func NewStore() *Store {
 	seed := []RoomType{
@@ -142,6 +145,12 @@ func (s *Store) CreateReservation(input CreateReservationInput) Reservation {
 	if roomTypeID == "" || guestName == "" || phoneNumber == "" {
 		reservation.Status = ReservationStatusInvalidInput
 		reservation.Message = "房型、入住人姓名和手机号不能为空"
+		s.reservations = append(s.reservations, reservation)
+		return reservation
+	}
+	if !mainlandMobilePattern.MatchString(phoneNumber) {
+		reservation.Status = ReservationStatusInvalidInput
+		reservation.Message = "手机号需为11位中国大陆手机号"
 		s.reservations = append(s.reservations, reservation)
 		return reservation
 	}

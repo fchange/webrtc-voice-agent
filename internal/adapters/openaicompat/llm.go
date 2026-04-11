@@ -16,14 +16,21 @@ import (
 )
 
 type LLM struct {
-	cfg    config.OpenAICompatibleLLMConfig
-	client *http.Client
-	logger *slog.Logger
-	tools  []Tool
+	cfg        config.OpenAICompatibleLLMConfig
+	client     *http.Client
+	logger     *slog.Logger
+	tools      []Tool
+	finalizers []ToolFinalizer
 }
 
 type ToolHandler func(ctx context.Context, arguments json.RawMessage) (any, error)
 type ToolPredicate func(req adapters.CompletionRequest) bool
+type ToolFinalizer func(content string, results []ToolCallResult) string
+
+type ToolCallResult struct {
+	Name    string
+	Content string
+}
 
 type Tool struct {
 	Type      string        `json:"type"`
@@ -60,6 +67,12 @@ func (l *LLM) Name() string {
 func (l *LLM) WithTools(tools []Tool) *LLM {
 	next := *l
 	next.tools = append([]Tool(nil), tools...)
+	return &next
+}
+
+func (l *LLM) WithToolFinalizers(finalizers []ToolFinalizer) *LLM {
+	next := *l
+	next.finalizers = append([]ToolFinalizer(nil), finalizers...)
 	return &next
 }
 
@@ -149,6 +162,8 @@ func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage, maxT
 const maxToolIterations = 6
 
 func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, tools []Tool, maxTokens int) (<-chan adapters.LLMEvent, error) {
+	var toolResults []ToolCallResult
+
 	for i := 0; i < maxToolIterations; i++ {
 		resp, err := l.sendChatRequest(ctx, chatCompletionRequest{
 			Model:       l.cfg.Model,
@@ -179,9 +194,10 @@ func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, too
 		message := decoded.Choices[0].Message
 		if len(message.ToolCalls) == 0 {
 			out := make(chan adapters.LLMEvent, 2)
-			if message.Content != "" {
-				l.logger.Info("openai-compatible llm message received", "len", len(message.Content), "text", message.Content)
-				out <- adapters.LLMEvent{Text: message.Content}
+			content := l.finalizeToolContent(message.Content, toolResults)
+			if content != "" {
+				l.logger.Info("openai-compatible llm message received", "len", len(content), "text", content)
+				out <- adapters.LLMEvent{Text: content}
 			}
 			out <- adapters.LLMEvent{Final: true}
 			close(out)
@@ -195,6 +211,10 @@ func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, too
 		})
 		for _, toolCall := range message.ToolCalls {
 			result := l.callTool(ctx, tools, toolCall)
+			toolResults = append(toolResults, ToolCallResult{
+				Name:    toolCall.Function.Name,
+				Content: result,
+			})
 			messages = append(messages, chatMessage{
 				Role:       "tool",
 				ToolCallID: toolCall.ID,
@@ -204,6 +224,16 @@ func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, too
 	}
 
 	return nil, fmt.Errorf("openai-compatible llm exceeded max tool iterations")
+}
+
+func (l *LLM) finalizeToolContent(content string, results []ToolCallResult) string {
+	for _, finalizer := range l.finalizers {
+		if finalizer == nil {
+			continue
+		}
+		content = finalizer(content, results)
+	}
+	return content
 }
 
 func (l *LLM) sendChatRequest(ctx context.Context, req chatCompletionRequest) (*http.Response, error) {

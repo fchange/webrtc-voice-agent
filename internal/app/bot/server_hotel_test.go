@@ -73,10 +73,10 @@ func TestHandleCreateReservationReturnsConflictWhenSoldOut(t *testing.T) {
 	server.deps.Hotel.CreateReservation(hotel.CreateReservationInput{
 		RoomTypeID:  "family-suite",
 		GuestName:   "First Guest",
-		PhoneNumber: "10086",
+		PhoneNumber: "13800138000",
 	})
 
-	body := bytes.NewBufferString(`{"room_type_id":"family-suite","guest_name":"Second Guest","phone_number":"10010"}`)
+	body := bytes.NewBufferString(`{"room_type_id":"family-suite","guest_name":"Second Guest","phone_number":"13900139000"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/internal/reservations", body)
 	request.Header.Set("Content-Type", "application/json")

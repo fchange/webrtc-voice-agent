@@ -27,12 +27,12 @@ func TestCreateReservationReturnsSoldOutWithoutFurtherDeduction(t *testing.T) {
 	store.CreateReservation(CreateReservationInput{
 		RoomTypeID:  "family-suite",
 		GuestName:   "First Guest",
-		PhoneNumber: "10086",
+		PhoneNumber: "13800138000",
 	})
 	soldOut := store.CreateReservation(CreateReservationInput{
 		RoomTypeID:  "family-suite",
 		GuestName:   "Second Guest",
-		PhoneNumber: "10010",
+		PhoneNumber: "13900139000",
 	})
 
 	if soldOut.Status != ReservationStatusSoldOut {
@@ -51,12 +51,12 @@ func TestListReservationsReturnsNewestFirst(t *testing.T) {
 	store.CreateReservation(CreateReservationInput{
 		RoomTypeID:  "deluxe-king",
 		GuestName:   "First Guest",
-		PhoneNumber: "10000",
+		PhoneNumber: "13800138000",
 	})
 	second := store.CreateReservation(CreateReservationInput{
 		RoomTypeID:  "garden-twin",
 		GuestName:   "Second Guest",
-		PhoneNumber: "10001",
+		PhoneNumber: "13900139000",
 	})
 
 	items := store.ListReservations(10)
@@ -65,5 +65,24 @@ func TestListReservationsReturnsNewestFirst(t *testing.T) {
 	}
 	if items[0].ID != second.ID {
 		t.Fatalf("expected newest reservation %s, got %s", second.ID, items[0].ID)
+	}
+}
+
+func TestCreateReservationRejectsInvalidPhoneNumber(t *testing.T) {
+	store := NewStore()
+
+	result := store.CreateReservation(CreateReservationInput{
+		RoomTypeID:  "family-suite",
+		GuestName:   "Fang Cheng",
+		PhoneNumber: "11111",
+	})
+
+	if result.Status != ReservationStatusInvalidInput {
+		t.Fatalf("expected invalid_input, got %s", result.Status)
+	}
+
+	rooms := store.ListRoomTypes()
+	if rooms[2].AvailableCount != 1 {
+		t.Fatalf("expected family-suite availability to remain 1, got %d", rooms[2].AvailableCount)
 	}
 }
