@@ -23,11 +23,13 @@ type LLM struct {
 }
 
 type ToolHandler func(ctx context.Context, arguments json.RawMessage) (any, error)
+type ToolPredicate func(req adapters.CompletionRequest) bool
 
 type Tool struct {
-	Type     string       `json:"type"`
-	Function ToolFunction `json:"function"`
-	Handler  ToolHandler  `json:"-"`
+	Type      string        `json:"type"`
+	Function  ToolFunction  `json:"function"`
+	Handler   ToolHandler   `json:"-"`
+	ShouldUse ToolPredicate `json:"-"`
 }
 
 type ToolFunction struct {
@@ -75,11 +77,22 @@ func (l *LLM) Complete(ctx context.Context, req adapters.CompletionRequest) (<-c
 		{Role: "user", Content: req.Text},
 	}
 
-	if len(l.tools) > 0 {
-		return l.completeWithTools(ctx, messages)
+	tools := l.toolsForRequest(req)
+	if len(tools) > 0 {
+		return l.completeWithTools(ctx, messages, tools)
 	}
 
 	return l.streamCompletion(ctx, messages)
+}
+
+func (l *LLM) toolsForRequest(req adapters.CompletionRequest) []Tool {
+	tools := make([]Tool, 0, len(l.tools))
+	for _, tool := range l.tools {
+		if tool.ShouldUse == nil || tool.ShouldUse(req) {
+			tools = append(tools, tool)
+		}
+	}
+	return tools
 }
 
 func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage) (<-chan adapters.LLMEvent, error) {
@@ -103,7 +116,7 @@ func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage) (<-c
 
 const maxToolIterations = 6
 
-func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage) (<-chan adapters.LLMEvent, error) {
+func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, tools []Tool) (<-chan adapters.LLMEvent, error) {
 	for i := 0; i < maxToolIterations; i++ {
 		resp, err := l.sendChatRequest(ctx, chatCompletionRequest{
 			Model:       l.cfg.Model,
@@ -113,7 +126,7 @@ func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage) (<-
 			Temperature: l.cfg.Temperature,
 			TopP:        l.cfg.TopP,
 			TopK:        l.cfg.TopK,
-			Tools:       l.toolDefinitions(),
+			Tools:       toolDefinitions(tools),
 			ToolChoice:  "auto",
 		})
 		if err != nil {
@@ -149,7 +162,7 @@ func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage) (<-
 			ToolCalls: message.ToolCalls,
 		})
 		for _, toolCall := range message.ToolCalls {
-			result := l.callTool(ctx, toolCall)
+			result := l.callTool(ctx, tools, toolCall)
 			messages = append(messages, chatMessage{
 				Role:       "tool",
 				ToolCallID: toolCall.ID,
@@ -190,9 +203,9 @@ func (l *LLM) sendChatRequest(ctx context.Context, req chatCompletionRequest) (*
 	return resp, nil
 }
 
-func (l *LLM) toolDefinitions() []Tool {
-	definitions := make([]Tool, 0, len(l.tools))
-	for _, tool := range l.tools {
+func toolDefinitions(tools []Tool) []Tool {
+	definitions := make([]Tool, 0, len(tools))
+	for _, tool := range tools {
 		definitions = append(definitions, Tool{
 			Type:     tool.Type,
 			Function: tool.Function,
@@ -201,8 +214,8 @@ func (l *LLM) toolDefinitions() []Tool {
 	return definitions
 }
 
-func (l *LLM) callTool(ctx context.Context, toolCall chatToolCall) string {
-	tool, ok := l.findTool(toolCall.Function.Name)
+func (l *LLM) callTool(ctx context.Context, tools []Tool, toolCall chatToolCall) string {
+	tool, ok := findTool(tools, toolCall.Function.Name)
 	if !ok || tool.Handler == nil {
 		return marshalToolResult(map[string]any{
 			"error": fmt.Sprintf("tool %q is not available", toolCall.Function.Name),
@@ -220,8 +233,8 @@ func (l *LLM) callTool(ctx context.Context, toolCall chatToolCall) string {
 	return marshalToolResult(result)
 }
 
-func (l *LLM) findTool(name string) (Tool, bool) {
-	for _, tool := range l.tools {
+func findTool(tools []Tool, name string) (Tool, bool) {
+	for _, tool := range tools {
 		if tool.Function.Name == name {
 			return tool, true
 		}

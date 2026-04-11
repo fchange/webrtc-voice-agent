@@ -3,6 +3,8 @@ package bot
 import (
 	"context"
 	"encoding/json"
+	"regexp"
+	"strings"
 
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/openaicompat"
@@ -29,6 +31,9 @@ func hotelTools(store *hotel.Store) []openaicompat.Tool {
 					"properties":           map[string]any{},
 					"additionalProperties": false,
 				},
+			},
+			ShouldUse: func(req adapters.CompletionRequest) bool {
+				return hotelQueryNeedsInventory(req.Text)
 			},
 			Handler: func(context.Context, json.RawMessage) (any, error) {
 				return map[string]any{
@@ -61,6 +66,9 @@ func hotelTools(store *hotel.Store) []openaicompat.Tool {
 					"additionalProperties": false,
 				},
 			},
+			ShouldUse: func(req adapters.CompletionRequest) bool {
+				return hotelQueryNeedsReservation(req.Text)
+			},
 			Handler: func(_ context.Context, arguments json.RawMessage) (any, error) {
 				var input hotel.CreateReservationInput
 				if len(arguments) > 0 {
@@ -72,4 +80,17 @@ func hotelTools(store *hotel.Store) []openaicompat.Tool {
 			},
 		},
 	}
+}
+
+func hotelQueryNeedsInventory(text string) bool {
+	return strings.ContainsAny(text, "房住订预库存还有几间")
+}
+
+var phoneNumberPattern = regexp.MustCompile(`1[3-9]\d{9}`)
+
+func hotelQueryNeedsReservation(text string) bool {
+	if !phoneNumberPattern.MatchString(text) {
+		return false
+	}
+	return strings.Contains(text, "订") || strings.Contains(text, "预订") || strings.Contains(text, "下单")
 }
