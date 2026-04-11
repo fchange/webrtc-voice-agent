@@ -47,6 +47,7 @@
 ## Current Phase 0 Behavior
 
 - bot 在 `control` DataChannel 打开后会发送 `session.ready`
+- 若下行音频与 response runtime 已就绪，bot 可在 `session.ready` 后主动发起 opening turn，用于接通后的自我介绍
 - 客户端发送 `turn.interrupt_hint` 后，bot 会在当前 placeholder turn 上提升为 `turn.interrupt`
 - bot 当前会在真实回复链开始/结束时发送 `bot.speaking.started` 和 `bot.speaking.stopped`
 - bot 当前会基于上行 RTP 活动与静默超时发送 `vad.started / vad.stopped / turn.end_of_utterance`

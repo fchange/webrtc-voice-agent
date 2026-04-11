@@ -266,6 +266,57 @@ func TestResponseRuntimeCancelledRunDoesNotCompleteOldTurn(t *testing.T) {
 	}
 }
 
+func TestResponseRuntimeStartAssistantTurnCompletesGreeting(t *testing.T) {
+	manager := session.NewManager(time.Minute)
+	task := manager.Create("sess_1")
+	if err := task.BeginNegotiation(); err != nil {
+		t.Fatalf("begin negotiation: %v", err)
+	}
+	if err := task.MarkActive(); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	tts := &testTTS{}
+	control := newControlRuntime(manager, slog.Default())
+	runtime := newResponseRuntime(
+		"sess_1",
+		manager,
+		&testLLM{},
+		tts,
+		control,
+		config.LLMSegmenterConfig{Mode: "punctuation_boundary", Punctuation: "。！？；!?;"},
+		nil,
+		nil,
+		slog.Default(),
+	)
+
+	if err := runtime.StartAssistantTurn("您好，欢迎致电。"); err != nil {
+		t.Fatalf("start assistant turn: %v", err)
+	}
+
+	waitTaskActive(t, task)
+
+	tts.mu.Lock()
+	defer tts.mu.Unlock()
+	if len(tts.texts) != 1 || tts.texts[0] != "您好，欢迎致电。" {
+		t.Fatalf("expected greeting to be synthesized once, got %v", tts.texts)
+	}
+
+	foundStarted := false
+	foundCompleted := false
+	for _, envelope := range control.pending["sess_1"] {
+		if envelope.Type == dcproto.TypeTurnStarted {
+			foundStarted = true
+		}
+		if envelope.Type == dcproto.TypeTurnCompleted {
+			foundCompleted = true
+		}
+	}
+	if !foundStarted || !foundCompleted {
+		t.Fatalf("expected opening turn events, got %+v", control.pending["sess_1"])
+	}
+}
+
 func ensureTestTurn(t *testing.T, task *session.Task) int64 {
 	t.Helper()
 	turnID, created, err := task.EnsureTurn()

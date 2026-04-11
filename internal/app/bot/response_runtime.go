@@ -8,6 +8,7 @@ import (
 
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
+	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
 	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
@@ -31,6 +32,7 @@ type responseRuntime struct {
 const maxResponseHistoryMessages = 8
 
 const voiceResponseSystemHint = "电话语音回复要求：必须简短自然，通常一句话，不超过35个汉字；不要寒暄过多，不要重复列清单；记住上文用户已提供的姓名、手机号、房型，不要重复索要。"
+const openingGreetingText = "您好，这里是酒店预订服务，我可以帮您查房型和办理预订，请问您想订什么房型？"
 
 func newResponseRuntime(
 	sessionID string,
@@ -84,6 +86,43 @@ func (r *responseRuntime) Close() {
 
 func (r *responseRuntime) Interrupt() {
 	r.cancelCurrent("response interrupted")
+}
+
+func (r *responseRuntime) StartAssistantTurn(text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	task, ok := r.manager.Get(r.sessionID)
+	if !ok {
+		return nil
+	}
+
+	turnID, err := task.StartTurn()
+	if err != nil {
+		return err
+	}
+	if r.control != nil {
+		r.control.emit(r.sessionID, dcproto.Envelope{
+			Version:   dcproto.Version,
+			Type:      dcproto.TypeTurnStarted,
+			SessionID: r.sessionID,
+			TurnID:    turnID,
+			Payload: dcproto.StatusPayload{
+				Message: "assistant opening turn started",
+			},
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	r.mu.Lock()
+	r.cancel = cancel
+	r.currentTurn = turnID
+	r.mu.Unlock()
+
+	go r.runAssistantTurn(ctx, turnID, text)
+	return nil
 }
 
 func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript string) {
@@ -182,6 +221,41 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 	}
 
 	r.completeTurn(turnID, "turn completed after llm and tts pipeline")
+}
+
+func (r *responseRuntime) runAssistantTurn(ctx context.Context, turnID int64, text string) {
+	defer r.clear(turnID)
+
+	task, ok := r.manager.Get(r.sessionID)
+	if !ok {
+		return
+	}
+	if err := task.StartResponse(turnID); err != nil {
+		r.logger.Error("start assistant turn failed", "session_id", r.sessionID, "turn_id", turnID, "err", err)
+		return
+	}
+
+	if r.control != nil {
+		r.control.emitBotSpeakingStarted(r.sessionID, turnID, "assistant opening greeting ready for tts")
+	}
+	r.synthesizeSegment(ctx, turnID, 1, text, true)
+	if ctx.Err() != nil {
+		r.logger.Info("assistant turn cancelled before completion", "session_id", r.sessionID, "turn_id", turnID, "err", ctx.Err())
+		return
+	}
+
+	r.rememberExchange("", text)
+	if r.audioOut != nil {
+		r.audioOut.WaitIdle()
+	}
+	if ctx.Err() != nil {
+		r.logger.Info("assistant turn cancelled after audio drain", "session_id", r.sessionID, "turn_id", turnID, "err", ctx.Err())
+		return
+	}
+	if r.control != nil {
+		r.control.emitBotSpeakingStopped(r.sessionID, turnID, "assistant opening greeting finished")
+	}
+	r.completeTurn(turnID, "turn completed after assistant opening greeting")
 }
 
 func (r *responseRuntime) synthesizeSegment(ctx context.Context, turnID int64, segmentID int, text string, isFinalSegment bool) {

@@ -19,6 +19,7 @@ type controlRuntime struct {
 	channels    map[string]*webrtc.DataChannel
 	pending     map[string][]dcproto.Envelope
 	onInterrupt func(sessionID string)
+	onReady     func(sessionID string)
 }
 
 func newControlRuntime(manager *session.Manager, logger *slog.Logger) *controlRuntime {
@@ -36,6 +37,12 @@ func (r *controlRuntime) setInterruptHandler(handler func(sessionID string)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.onInterrupt = handler
+}
+
+func (r *controlRuntime) setReadyHandler(handler func(sessionID string)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onReady = handler
 }
 
 func (r *controlRuntime) bind(sessionID string, channel *webrtc.DataChannel) {
@@ -65,6 +72,13 @@ func (r *controlRuntime) bind(sessionID string, channel *webrtc.DataChannel) {
 		})
 		for _, envelope := range pending {
 			r.send(channel, envelope)
+		}
+
+		r.mu.Lock()
+		handler := r.onReady
+		r.mu.Unlock()
+		if handler != nil {
+			handler(sessionID)
 		}
 	})
 

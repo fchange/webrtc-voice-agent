@@ -213,3 +213,25 @@ func TestAppendPendingEnvelopeKeepsNewestEvents(t *testing.T) {
 		t.Fatalf("expected oldest retained event to be turn 3, got %d", pending[0].TurnID)
 	}
 }
+
+func TestControlRuntimeReadyHandlerCanBeRegistered(t *testing.T) {
+	runtime := newControlRuntime(session.NewManager(time.Minute), slog.Default())
+	called := false
+	runtime.setReadyHandler(func(sessionID string) {
+		if sessionID == "sess_1" {
+			called = true
+		}
+	})
+
+	runtime.mu.Lock()
+	handler := runtime.onReady
+	runtime.mu.Unlock()
+	if handler == nil {
+		t.Fatal("expected ready handler to be set")
+	}
+
+	handler("sess_1")
+	if !called {
+		t.Fatal("expected ready handler to be invoked")
+	}
+}

@@ -21,17 +21,19 @@ type signalWriter interface {
 }
 
 type rtcSession struct {
-	pc         *webrtc.PeerConnection
-	pendingICE []webrtc.ICECandidateInit
-	signal     signalWriter
-	remoteSet  bool
-	endpointer *packetEndpointer
-	upstream   *audio.EncodedPacketStream
-	pcm        *audio.PCMFrameStream
-	asr        *asrRuntime
-	response   *responseRuntime
-	botAudio   *webrtc.TrackLocalStaticSample
-	downlink   *downlinkAudioWriter
+	pc                 *webrtc.PeerConnection
+	pendingICE         []webrtc.ICECandidateInit
+	signal             signalWriter
+	remoteSet          bool
+	controlReady       bool
+	openingTurnStarted bool
+	endpointer         *packetEndpointer
+	upstream           *audio.EncodedPacketStream
+	pcm                *audio.PCMFrameStream
+	asr                *asrRuntime
+	response           *responseRuntime
+	botAudio           *webrtc.TrackLocalStaticSample
+	downlink           *downlinkAudioWriter
 }
 
 type rtcManager struct {
@@ -91,6 +93,40 @@ func newRTCManager(
 		segmenter:       segmenter,
 		ttsConfig:       ttsConfig,
 		decoderRegistry: registry,
+	}
+}
+
+func (m *rtcManager) markControlReady(sessionID string) {
+	m.mu.Lock()
+	state := m.session[sessionID]
+	if state == nil {
+		state = &rtcSession{}
+		m.session[sessionID] = state
+	}
+	state.controlReady = true
+	m.mu.Unlock()
+
+	m.maybeStartOpeningTurn(sessionID)
+}
+
+func (m *rtcManager) maybeStartOpeningTurn(sessionID string) {
+	m.mu.Lock()
+	state := m.session[sessionID]
+	if state == nil || !state.controlReady || state.response == nil || state.openingTurnStarted {
+		m.mu.Unlock()
+		return
+	}
+	response := state.response
+	state.openingTurnStarted = true
+	m.mu.Unlock()
+
+	if err := response.StartAssistantTurn(openingGreetingText); err != nil {
+		m.logger.Info("skip opening greeting", "session_id", sessionID, "err", err)
+		m.mu.Lock()
+		if current := m.session[sessionID]; current != nil {
+			current.openingTurnStarted = false
+		}
+		m.mu.Unlock()
 	}
 }
 
@@ -339,6 +375,7 @@ func (m *rtcManager) newPeerConnection(sessionID string, writer signalWriter) (*
 			state.downlink = downlink
 		}
 		m.mu.Unlock()
+		m.maybeStartOpeningTurn(sessionID)
 		m.attachDecodeConsumer(sessionID, upstream, pcmStream)
 		m.attachEndpointingConsumer(sessionID, pcmStream, endpointer)
 		asrRuntime.Attach(pcmStream)

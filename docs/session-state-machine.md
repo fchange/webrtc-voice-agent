@@ -14,6 +14,12 @@
 - `closing`: 正在结束会话
 - `closed`: 已结束
 
+补充约定：
+
+- 接通后的 bot 开场白视为“opening turn”
+- 语义上它相当于第 0 轮自我介绍，但当前内部 `turn_id` 仍沿用现有自增编号，因此通常会占用首个 turn id
+- opening turn 同样遵循 `turn.started -> bot.speaking.* -> turn.completed`
+
 ## System Events
 
 - `session.start`

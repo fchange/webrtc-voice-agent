@@ -70,6 +70,7 @@ func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Se
 		cfg.TTS.XFYUN,
 	)
 	control.setInterruptHandler(rtc.interruptResponse)
+	control.setReadyHandler(rtc.markControlReady)
 	return &Server{
 		cfg:    cfg,
 		logger: logger,
