@@ -47,7 +47,7 @@ func hotelTools(store *hotel.Store) []openaicompat.Tool {
 			Type: "function",
 			Function: openaicompat.ToolFunction{
 				Name:        "create_reservation",
-				Description: "在用户确认房型、入住人姓名和11位中国大陆手机号后创建酒店预订，并在成功时扣减库存。只有工具返回 status=confirmed 后才可以回复预订成功；invalid_input 时必须追问缺失或无效信息。",
+				Description: "在用户确认房型、入住人姓名和手机号后创建酒店预订，并在成功时扣减库存。Demo 环境允许 3 到 20 位纯数字号码；可把“5个1”理解为 11111。只有工具返回 status=confirmed 后才可以回复预订成功；invalid_input 时必须追问缺失或无效信息。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -61,7 +61,7 @@ func hotelTools(store *hotel.Store) []openaicompat.Tool {
 						},
 						"phone_number": map[string]any{
 							"type":        "string",
-							"description": "入住人11位中国大陆手机号，例如 13800138000；不要把“5个1”这类不足11位的表达当作有效手机号。",
+							"description": "入住人手机号或 Demo 号码，例如 13800138000、111、11111；“5个1”应作为 11111 传入。",
 						},
 					},
 					"required":             []string{"room_type_id", "guest_name", "phone_number"},
@@ -132,7 +132,7 @@ func hotelBookingConfirmationFinalizer(content string, results []openaicompat.To
 	if ok && result.Message != "" {
 		return "还不能确认预订：" + result.Message + "。请补充有效信息。"
 	}
-	return "我还没完成预订，请提供有效的11位手机号，我再帮您确认。"
+	return "我还没完成预订，请提供有效手机号或数字号码，我再帮您确认。"
 }
 
 func hotelTextLooksConfirmed(text string) bool {

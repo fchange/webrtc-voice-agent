@@ -3,6 +3,7 @@ package hotel
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,7 +53,8 @@ type Store struct {
 	nextID       int64
 }
 
-var mainlandMobilePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
+var demoPhonePattern = regexp.MustCompile(`^\d{3,20}$`)
+var repeatedDigitPhonePattern = regexp.MustCompile(`^([0-9]+)个([0-9])$`)
 
 func NewStore() *Store {
 	seed := []RoomType{
@@ -132,7 +134,7 @@ func (s *Store) CreateReservation(input CreateReservationInput) Reservation {
 	defer s.mu.Unlock()
 
 	guestName := strings.TrimSpace(input.GuestName)
-	phoneNumber := strings.TrimSpace(input.PhoneNumber)
+	phoneNumber := normalizeDemoPhoneNumber(input.PhoneNumber)
 	roomTypeID := strings.TrimSpace(input.RoomTypeID)
 	reservation := Reservation{
 		ID:          s.nextReservationIDLocked(),
@@ -148,9 +150,9 @@ func (s *Store) CreateReservation(input CreateReservationInput) Reservation {
 		s.reservations = append(s.reservations, reservation)
 		return reservation
 	}
-	if !mainlandMobilePattern.MatchString(phoneNumber) {
+	if !demoPhonePattern.MatchString(phoneNumber) {
 		reservation.Status = ReservationStatusInvalidInput
-		reservation.Message = "手机号需为11位中国大陆手机号"
+		reservation.Message = "手机号需为3到20位数字"
 		s.reservations = append(s.reservations, reservation)
 		return reservation
 	}
@@ -184,4 +186,18 @@ func (s *Store) nextReservationIDLocked() string {
 	next := s.nextID
 	s.nextID++
 	return fmt.Sprintf("res_%06d", next)
+}
+
+func normalizeDemoPhoneNumber(phoneNumber string) string {
+	normalized := strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(phoneNumber))
+	matches := repeatedDigitPhonePattern.FindStringSubmatch(normalized)
+	if len(matches) != 3 {
+		return normalized
+	}
+
+	count, err := strconv.Atoi(matches[1])
+	if err != nil || count < 1 || count > 20 {
+		return normalized
+	}
+	return strings.Repeat(matches[2], count)
 }

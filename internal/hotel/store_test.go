@@ -68,13 +68,49 @@ func TestListReservationsReturnsNewestFirst(t *testing.T) {
 	}
 }
 
-func TestCreateReservationRejectsInvalidPhoneNumber(t *testing.T) {
+func TestCreateReservationAcceptsDemoPhoneNumber(t *testing.T) {
 	store := NewStore()
 
 	result := store.CreateReservation(CreateReservationInput{
 		RoomTypeID:  "family-suite",
 		GuestName:   "Fang Cheng",
 		PhoneNumber: "11111",
+	})
+
+	if result.Status != ReservationStatusConfirmed {
+		t.Fatalf("expected confirmed, got %s", result.Status)
+	}
+
+	rooms := store.ListRoomTypes()
+	if rooms[2].AvailableCount != 0 {
+		t.Fatalf("expected family-suite availability to be 0, got %d", rooms[2].AvailableCount)
+	}
+}
+
+func TestCreateReservationNormalizesRepeatedDigitDemoPhoneNumber(t *testing.T) {
+	store := NewStore()
+
+	result := store.CreateReservation(CreateReservationInput{
+		RoomTypeID:  "deluxe-king",
+		GuestName:   "Fang Cheng",
+		PhoneNumber: "5个1",
+	})
+
+	if result.Status != ReservationStatusConfirmed {
+		t.Fatalf("expected confirmed, got %s", result.Status)
+	}
+	if result.PhoneNumber != "11111" {
+		t.Fatalf("expected normalized phone number 11111, got %q", result.PhoneNumber)
+	}
+}
+
+func TestCreateReservationRejectsInvalidPhoneNumber(t *testing.T) {
+	store := NewStore()
+
+	result := store.CreateReservation(CreateReservationInput{
+		RoomTypeID:  "family-suite",
+		GuestName:   "Fang Cheng",
+		PhoneNumber: "abc",
 	})
 
 	if result.Status != ReservationStatusInvalidInput {
