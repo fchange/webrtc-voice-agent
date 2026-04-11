@@ -42,7 +42,7 @@ func NewServer(cfg config.BotConfig, logger *slog.Logger, deps Dependencies) *Se
 	if deps.Hotel == nil {
 		deps.Hotel = hotel.NewStore()
 	}
-	deps.Providers.LLM = newHotelInventoryLLM(deps.Providers.LLM, deps.Hotel)
+	deps.Providers.LLM = withHotelLLMCapabilities(deps.Providers.LLM, deps.Hotel)
 	control := newControlRuntime(deps.Manager, logger)
 
 	asrSampleRate := uint32(cfg.VAD.SampleRate)

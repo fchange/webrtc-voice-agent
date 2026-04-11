@@ -1,7 +1,11 @@
 package openaicompat
 
 import (
+	"context"
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -39,6 +43,109 @@ func TestReadStreamHandlesSSEChunks(t *testing.T) {
 	}
 	if !events[2].Final {
 		t.Fatalf("expected final event, got %+v", events[2])
+	}
+}
+
+func TestCompleteRunsToolCallLoop(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		var req chatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch requestCount {
+		case 1:
+			if len(req.Tools) != 1 || req.Tools[0].Function.Name != "list_room_types" {
+				t.Fatalf("expected list_room_types tool, got %+v", req.Tools)
+			}
+			_ = json.NewEncoder(w).Encode(chatCompletionResponse{
+				Choices: []chatResponseChoice{
+					{
+						FinishReason: "tool_calls",
+						Message: chatMessage{
+							Role: "assistant",
+							ToolCalls: []chatToolCall{
+								{
+									ID:   "call_1",
+									Type: "function",
+									Function: chatToolCallFunction{
+										Name:      "list_room_types",
+										Arguments: `{}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+		case 2:
+			if len(req.Messages) < 4 {
+				t.Fatalf("expected tool result in follow-up messages, got %+v", req.Messages)
+			}
+			toolMessage := req.Messages[len(req.Messages)-1]
+			if toolMessage.Role != "tool" || toolMessage.ToolCallID != "call_1" {
+				t.Fatalf("expected tool result message, got %+v", toolMessage)
+			}
+			if !strings.Contains(toolMessage.Content, "家庭套房") {
+				t.Fatalf("expected tool content to include handler result, got %q", toolMessage.Content)
+			}
+			_ = json.NewEncoder(w).Encode(chatCompletionResponse{
+				Choices: []chatResponseChoice{
+					{
+						FinishReason: "stop",
+						Message: chatMessage{
+							Role:    "assistant",
+							Content: "家庭套房还有 1 间。",
+						},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request count %d", requestCount)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewLLM(configForTest(), nil).WithTools([]Tool{
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name: "list_room_types",
+				Parameters: map[string]any{
+					"type": "object",
+				},
+			},
+			Handler: func(context.Context, json.RawMessage) (any, error) {
+				return map[string]any{
+					"room_types": []map[string]any{
+						{"name": "家庭套房", "available_count": 1},
+					},
+				}, nil
+			},
+		},
+	})
+	provider.cfg.BaseURL = server.URL
+
+	events, err := provider.Complete(t.Context(), adapters.CompletionRequest{Text: "家庭套房还有吗"})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	var got strings.Builder
+	final := false
+	for event := range events {
+		got.WriteString(event.Text)
+		final = final || event.Final
+	}
+	if got.String() != "家庭套房还有 1 间。" || !final {
+		t.Fatalf("unexpected events text=%q final=%v", got.String(), final)
+	}
+	if requestCount != 2 {
+		t.Fatalf("expected two requests, got %d", requestCount)
 	}
 }
 

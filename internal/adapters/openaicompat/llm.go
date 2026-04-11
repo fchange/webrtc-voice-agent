@@ -19,6 +19,21 @@ type LLM struct {
 	cfg    config.OpenAICompatibleLLMConfig
 	client *http.Client
 	logger *slog.Logger
+	tools  []Tool
+}
+
+type ToolHandler func(ctx context.Context, arguments json.RawMessage) (any, error)
+
+type Tool struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+	Handler  ToolHandler  `json:"-"`
+}
+
+type ToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
 }
 
 func NewLLM(cfg config.OpenAICompatibleLLMConfig, logger *slog.Logger) *LLM {
@@ -40,6 +55,12 @@ func (l *LLM) Name() string {
 	return "openai-compatible-chat-completions"
 }
 
+func (l *LLM) WithTools(tools []Tool) *LLM {
+	next := *l
+	next.tools = append([]Tool(nil), tools...)
+	return &next
+}
+
 func (l *LLM) Ready() bool {
 	return l.cfg.BaseURL != "" && l.cfg.APIKey != "" && l.cfg.Model != ""
 }
@@ -49,18 +70,99 @@ func (l *LLM) Complete(ctx context.Context, req adapters.CompletionRequest) (<-c
 		return nil, fmt.Errorf("openai-compatible llm credentials are incomplete")
 	}
 
-	body, err := json.Marshal(chatCompletionRequest{
-		Model: l.cfg.Model,
-		Messages: []chatMessage{
-			{Role: "system", Content: l.cfg.SystemPrompt},
-			{Role: "user", Content: req.Text},
-		},
+	messages := []chatMessage{
+		{Role: "system", Content: l.cfg.SystemPrompt},
+		{Role: "user", Content: req.Text},
+	}
+
+	if len(l.tools) > 0 {
+		return l.completeWithTools(ctx, messages)
+	}
+
+	return l.streamCompletion(ctx, messages)
+}
+
+func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage) (<-chan adapters.LLMEvent, error) {
+	resp, err := l.sendChatRequest(ctx, chatCompletionRequest{
+		Model:       l.cfg.Model,
+		Messages:    messages,
 		Stream:      true,
 		MaxTokens:   l.cfg.MaxTokens,
 		Temperature: l.cfg.Temperature,
 		TopP:        l.cfg.TopP,
 		TopK:        l.cfg.TopK,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan adapters.LLMEvent, 32)
+	go l.readStream(resp.Body, out)
+	return out, nil
+}
+
+const maxToolIterations = 6
+
+func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage) (<-chan adapters.LLMEvent, error) {
+	for i := 0; i < maxToolIterations; i++ {
+		resp, err := l.sendChatRequest(ctx, chatCompletionRequest{
+			Model:       l.cfg.Model,
+			Messages:    messages,
+			Stream:      false,
+			MaxTokens:   l.cfg.MaxTokens,
+			Temperature: l.cfg.Temperature,
+			TopP:        l.cfg.TopP,
+			TopK:        l.cfg.TopK,
+			Tools:       l.toolDefinitions(),
+			ToolChoice:  "auto",
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		var decoded chatCompletionResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("decode openai-compatible llm response: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		if len(decoded.Choices) == 0 {
+			return nil, fmt.Errorf("openai-compatible llm returned no choices")
+		}
+
+		message := decoded.Choices[0].Message
+		if len(message.ToolCalls) == 0 {
+			out := make(chan adapters.LLMEvent, 2)
+			if message.Content != "" {
+				l.logger.Info("openai-compatible llm message received", "len", len(message.Content), "text", message.Content)
+				out <- adapters.LLMEvent{Text: message.Content}
+			}
+			out <- adapters.LLMEvent{Final: true}
+			close(out)
+			return out, nil
+		}
+
+		messages = append(messages, chatMessage{
+			Role:      "assistant",
+			Content:   message.Content,
+			ToolCalls: message.ToolCalls,
+		})
+		for _, toolCall := range message.ToolCalls {
+			result := l.callTool(ctx, toolCall)
+			messages = append(messages, chatMessage{
+				Role:       "tool",
+				ToolCallID: toolCall.ID,
+				Content:    result,
+			})
+		}
+	}
+
+	return nil, fmt.Errorf("openai-compatible llm exceeded max tool iterations")
+}
+
+func (l *LLM) sendChatRequest(ctx context.Context, req chatCompletionRequest) (*http.Response, error) {
+	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +187,54 @@ func (l *LLM) Complete(ctx context.Context, req adapters.CompletionRequest) (<-c
 		return nil, fmt.Errorf("openai-compatible llm status=%s body=%s", resp.Status, strings.TrimSpace(string(data)))
 	}
 
-	out := make(chan adapters.LLMEvent, 32)
-	go l.readStream(resp.Body, out)
-	return out, nil
+	return resp, nil
+}
+
+func (l *LLM) toolDefinitions() []Tool {
+	definitions := make([]Tool, 0, len(l.tools))
+	for _, tool := range l.tools {
+		definitions = append(definitions, Tool{
+			Type:     tool.Type,
+			Function: tool.Function,
+		})
+	}
+	return definitions
+}
+
+func (l *LLM) callTool(ctx context.Context, toolCall chatToolCall) string {
+	tool, ok := l.findTool(toolCall.Function.Name)
+	if !ok || tool.Handler == nil {
+		return marshalToolResult(map[string]any{
+			"error": fmt.Sprintf("tool %q is not available", toolCall.Function.Name),
+		})
+	}
+
+	l.logger.Info("openai-compatible llm tool call started", "tool", toolCall.Function.Name, "tool_call_id", toolCall.ID)
+	result, err := tool.Handler(ctx, json.RawMessage(toolCall.Function.Arguments))
+	if err != nil {
+		l.logger.Error("openai-compatible llm tool call failed", "tool", toolCall.Function.Name, "tool_call_id", toolCall.ID, "err", err)
+		return marshalToolResult(map[string]any{"error": err.Error()})
+	}
+
+	l.logger.Info("openai-compatible llm tool call completed", "tool", toolCall.Function.Name, "tool_call_id", toolCall.ID)
+	return marshalToolResult(result)
+}
+
+func (l *LLM) findTool(name string) (Tool, bool) {
+	for _, tool := range l.tools {
+		if tool.Function.Name == name {
+			return tool, true
+		}
+	}
+	return Tool{}, false
+}
+
+func marshalToolResult(result any) string {
+	data, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Sprintf(`{"error":%q}`, err.Error())
+	}
+	return string(data)
 }
 
 func (l *LLM) readStream(body io.ReadCloser, out chan<- adapters.LLMEvent) {
@@ -150,11 +297,35 @@ type chatCompletionRequest struct {
 	Temperature float64       `json:"temperature,omitempty"`
 	TopP        float64       `json:"top_p,omitempty"`
 	TopK        int           `json:"top_k,omitempty"`
+	Tools       []Tool        `json:"tools,omitempty"`
+	ToolChoice  string        `json:"tool_choice,omitempty"`
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content,omitempty"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+type chatCompletionResponse struct {
+	Choices []chatResponseChoice `json:"choices"`
+}
+
+type chatResponseChoice struct {
+	Message      chatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
+}
+
+type chatToolCall struct {
+	ID       string               `json:"id"`
+	Type     string               `json:"type"`
+	Function chatToolCallFunction `json:"function"`
+}
+
+type chatToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type chatCompletionChunk struct {
