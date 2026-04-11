@@ -25,7 +25,12 @@ type responseRuntime struct {
 	mu          sync.Mutex
 	cancel      context.CancelFunc
 	currentTurn int64
+	history     []adapters.ConversationMessage
 }
+
+const maxResponseHistoryMessages = 8
+
+const voiceResponseSystemHint = "电话语音回复要求：必须简短自然，通常一句话，不超过35个汉字；不要寒暄过多，不要重复列清单；记住上文用户已提供的姓名、手机号、房型，不要重复索要。"
 
 func newResponseRuntime(
 	sessionID string,
@@ -94,9 +99,11 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 	}
 
 	llmEvents, err := r.llm.Complete(ctx, adapters.CompletionRequest{
-		SessionID: r.sessionID,
-		TurnID:    turnID,
-		Text:      transcript,
+		SessionID:  r.sessionID,
+		TurnID:     turnID,
+		Text:       transcript,
+		SystemHint: voiceResponseSystemHint,
+		History:    r.historySnapshot(),
 	})
 	if err != nil {
 		r.logger.Error("start llm completion failed", "session_id", r.sessionID, "turn_id", turnID, "provider", r.llm.Name(), "err", err)
@@ -152,6 +159,7 @@ func (r *responseRuntime) run(ctx context.Context, turnID int64, transcript stri
 			Final: true,
 		})
 	}
+	r.rememberExchange(transcript, fullText.String())
 	if speaking && r.audioOut != nil {
 		r.audioOut.WaitIdle()
 	}
@@ -279,6 +287,32 @@ func (r *responseRuntime) clear(turnID int64) {
 		r.cancel = nil
 	}
 	r.mu.Unlock()
+}
+
+func (r *responseRuntime) historySnapshot() []adapters.ConversationMessage {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]adapters.ConversationMessage(nil), r.history...)
+}
+
+func (r *responseRuntime) rememberExchange(userText string, assistantText string) {
+	userText = strings.TrimSpace(userText)
+	assistantText = strings.TrimSpace(assistantText)
+	if userText == "" && assistantText == "" {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if userText != "" {
+		r.history = append(r.history, adapters.ConversationMessage{Role: "user", Text: userText})
+	}
+	if assistantText != "" {
+		r.history = append(r.history, adapters.ConversationMessage{Role: "assistant", Text: assistantText})
+	}
+	if len(r.history) > maxResponseHistoryMessages {
+		r.history = append([]adapters.ConversationMessage(nil), r.history[len(r.history)-maxResponseHistoryMessages:]...)
+	}
 }
 
 type punctuationBoundarySegmenter struct {

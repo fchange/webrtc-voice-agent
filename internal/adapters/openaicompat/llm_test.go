@@ -214,6 +214,56 @@ func TestCompleteFiltersToolsPerRequest(t *testing.T) {
 	}
 }
 
+func TestCompleteSendsSystemHintAndHistory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if len(req.Messages) != 4 {
+			t.Fatalf("expected system, history user, history assistant, current user messages; got %+v", req.Messages)
+		}
+		if req.MaxTokens != 96 {
+			t.Fatalf("expected voice request max_tokens cap 96, got %d", req.MaxTokens)
+		}
+		if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content, "不超过35个汉字") {
+			t.Fatalf("expected concise system hint, got %+v", req.Messages[0])
+		}
+		if req.Messages[1].Role != "user" || req.Messages[1].Content != "我叫张三" {
+			t.Fatalf("unexpected history user message: %+v", req.Messages[1])
+		}
+		if req.Messages[2].Role != "assistant" || req.Messages[2].Content != "好的，我记住了。" {
+			t.Fatalf("unexpected history assistant message: %+v", req.Messages[2])
+		}
+		if req.Messages[3].Role != "user" || req.Messages[3].Content != "我要订家庭套房" {
+			t.Fatalf("unexpected current user message: %+v", req.Messages[3])
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"好的。\"},\"finish_reason\":\"\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	provider := NewLLM(configForTest(), nil)
+	provider.cfg.BaseURL = server.URL
+
+	events, err := provider.Complete(t.Context(), adapters.CompletionRequest{
+		Text:       "我要订家庭套房",
+		SystemHint: "不超过35个汉字",
+		History: []adapters.ConversationMessage{
+			{Role: "user", Text: "我叫张三"},
+			{Role: "assistant", Text: "好的，我记住了。"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	for range events {
+	}
+}
+
 func configForTest() config.OpenAICompatibleLLMConfig {
 	return config.OpenAICompatibleLLMConfig{
 		BaseURL:   "https://example.com/v1/chat/completions",

@@ -17,9 +17,16 @@ type ASREvent struct {
 }
 
 type CompletionRequest struct {
-	SessionID string
-	TurnID    int64
-	Text      string
+	SessionID  string
+	TurnID     int64
+	Text       string
+	SystemHint string
+	History    []ConversationMessage
+}
+
+type ConversationMessage struct {
+	Role string
+	Text string
 }
 
 type LLMEvent struct {

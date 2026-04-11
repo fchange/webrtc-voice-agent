@@ -73,16 +73,40 @@ func (l *LLM) Complete(ctx context.Context, req adapters.CompletionRequest) (<-c
 	}
 
 	messages := []chatMessage{
-		{Role: "system", Content: l.cfg.SystemPrompt},
-		{Role: "user", Content: req.Text},
+		{Role: "system", Content: joinSystemPrompt(l.cfg.SystemPrompt, req.SystemHint)},
 	}
+	for _, item := range req.History {
+		role := strings.TrimSpace(item.Role)
+		text := strings.TrimSpace(item.Text)
+		if role == "" || text == "" {
+			continue
+		}
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		messages = append(messages, chatMessage{Role: role, Content: text})
+	}
+	messages = append(messages, chatMessage{Role: "user", Content: req.Text})
+	maxTokens := l.maxTokensForRequest(req)
 
 	tools := l.toolsForRequest(req)
 	if len(tools) > 0 {
-		return l.completeWithTools(ctx, messages, tools)
+		return l.completeWithTools(ctx, messages, tools, maxTokens)
 	}
 
-	return l.streamCompletion(ctx, messages)
+	return l.streamCompletion(ctx, messages, maxTokens)
+}
+
+func joinSystemPrompt(base string, hint string) string {
+	base = strings.TrimSpace(base)
+	hint = strings.TrimSpace(hint)
+	if hint == "" {
+		return base
+	}
+	if base == "" {
+		return hint
+	}
+	return base + "\n\n" + hint
 }
 
 func (l *LLM) toolsForRequest(req adapters.CompletionRequest) []Tool {
@@ -95,12 +119,20 @@ func (l *LLM) toolsForRequest(req adapters.CompletionRequest) []Tool {
 	return tools
 }
 
-func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage) (<-chan adapters.LLMEvent, error) {
+func (l *LLM) maxTokensForRequest(req adapters.CompletionRequest) int {
+	maxTokens := l.cfg.MaxTokens
+	if strings.TrimSpace(req.SystemHint) != "" && (maxTokens == 0 || maxTokens > 96) {
+		return 96
+	}
+	return maxTokens
+}
+
+func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage, maxTokens int) (<-chan adapters.LLMEvent, error) {
 	resp, err := l.sendChatRequest(ctx, chatCompletionRequest{
 		Model:       l.cfg.Model,
 		Messages:    messages,
 		Stream:      true,
-		MaxTokens:   l.cfg.MaxTokens,
+		MaxTokens:   maxTokens,
 		Temperature: l.cfg.Temperature,
 		TopP:        l.cfg.TopP,
 		TopK:        l.cfg.TopK,
@@ -116,13 +148,13 @@ func (l *LLM) streamCompletion(ctx context.Context, messages []chatMessage) (<-c
 
 const maxToolIterations = 6
 
-func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, tools []Tool) (<-chan adapters.LLMEvent, error) {
+func (l *LLM) completeWithTools(ctx context.Context, messages []chatMessage, tools []Tool, maxTokens int) (<-chan adapters.LLMEvent, error) {
 	for i := 0; i < maxToolIterations; i++ {
 		resp, err := l.sendChatRequest(ctx, chatCompletionRequest{
 			Model:       l.cfg.Model,
 			Messages:    messages,
 			Stream:      false,
-			MaxTokens:   l.cfg.MaxTokens,
+			MaxTokens:   maxTokens,
 			Temperature: l.cfg.Temperature,
 			TopP:        l.cfg.TopP,
 			TopK:        l.cfg.TopK,
