@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +46,7 @@ func TestTTSReady(t *testing.T) {
 			cfg := complete
 			cfg.ResourceID = ""
 			return cfg
-		}(), want: false},
+		}(), want: true},
 		{name: "missing cluster", cfg: func() config.VolcTTSConfig {
 			cfg := complete
 			cfg.Cluster = ""
@@ -80,11 +82,11 @@ func TestTTSSynthesizePostsExpectedRequestAndEmitsAudio(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer;token" {
 			t.Fatalf("expected authorization header, got %q", got)
 		}
-		if got := r.Header.Get("Resource-Id"); got != "resource-id" {
-			t.Fatalf("expected Resource-Id header, got %q", got)
+		if got := r.Header.Get("Resource-Id"); got != "" {
+			t.Fatalf("expected no Resource-Id header for v1 tts, got %q", got)
 		}
-		if got := r.Header.Get("X-Api-Resource-Id"); got != "resource-id" {
-			t.Fatalf("expected X-Api-Resource-Id header, got %q", got)
+		if got := r.Header.Get("X-Api-Resource-Id"); got != "" {
+			t.Fatalf("expected no X-Api-Resource-Id header for v1 tts, got %q", got)
 		}
 
 		var body volcTTSRequest
@@ -160,6 +162,40 @@ func TestTTSSynthesizeRequiresReadyConfig(t *testing.T) {
 	}
 }
 
+func TestTTSSynthesizeDoesNotRequireResourceID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Resource-Id"); got != "" {
+			t.Fatalf("expected no Resource-Id header for v1 tts, got %q", got)
+		}
+		if got := r.Header.Get("X-Api-Resource-Id"); got != "" {
+			t.Fatalf("expected no X-Api-Resource-Id header for v1 tts, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(volcTTSResponse{
+			ReqID:   "response-req-id",
+			Code:    3000,
+			Message: "Success",
+			Data:    base64.StdEncoding.EncodeToString([]byte("ok")),
+		})
+	}))
+	defer server.Close()
+
+	cfg := testVolcTTSConfig(server.URL)
+	cfg.ResourceID = ""
+
+	provider := NewTTS(cfg, discardLogger())
+	events, err := provider.Synthesize(context.Background(), adapters.SynthesisRequest{Text: "hello"})
+	if err != nil {
+		t.Fatalf("synthesize without resource id: %v", err)
+	}
+	if event, ok := <-events; !ok || !event.Final {
+		t.Fatalf("expected final event, got ok=%v event=%+v", ok, event)
+	}
+	if _, ok := <-events; ok {
+		t.Fatal("expected tts event channel to be closed")
+	}
+}
+
 func TestTTSSynthesizeHTTPErrorIncludesResponseBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -232,6 +268,47 @@ func TestTTSDefaultOfficialEndpoint(t *testing.T) {
 	}
 }
 
+func TestTTSSynthesizeWithEnvConfigWritesTempFile(t *testing.T) {
+	cfg := config.LoadBotConfig().TTS.VOLC
+	if cfg.BaseURL == "" || cfg.AccessToken == "" || cfg.AppID == "" || cfg.Cluster == "" || cfg.VoiceType == "" {
+		t.Skip("skip live env tts test: incomplete TTS_VOLC_* config")
+	}
+	if isPlaceholderVolcValue(cfg.AccessToken) || isPlaceholderVolcValue(cfg.AppID) {
+		t.Skip("skip live env tts test: placeholder TTS_VOLC_* credentials")
+	}
+
+	provider := NewTTS(cfg, discardLogger())
+	events, err := provider.Synthesize(context.Background(), adapters.SynthesisRequest{
+		SessionID: "env-live-test",
+		TurnID:    1,
+		Text:      "这是一个环境配置驱动的 TTS 联调用例。",
+	})
+	if err != nil {
+		t.Fatalf("synthesize with env config: %v", err)
+	}
+
+	var audio []byte
+	for event := range events {
+		audio = append(audio, event.Chunk.PCM...)
+	}
+	if len(audio) == 0 {
+		t.Fatal("expected synthesized audio bytes")
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "volc-live-output.pcm")
+	if err := os.WriteFile(outputPath, audio, 0o644); err != nil {
+		t.Fatalf("write temp audio file: %v", err)
+	}
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Fatalf("stat temp audio file: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("expected non-empty temp audio file at %s", outputPath)
+	}
+	t.Logf("wrote synthesized audio to %s (%d bytes)", outputPath, info.Size())
+}
+
 func testVolcTTSConfig(baseURL string) config.VolcTTSConfig {
 	return config.VolcTTSConfig{
 		BaseURL:     baseURL,
@@ -251,4 +328,8 @@ func testVolcTTSConfig(baseURL string) config.VolcTTSConfig {
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func isPlaceholderVolcValue(value string) bool {
+	return strings.HasPrefix(value, "your_")
 }

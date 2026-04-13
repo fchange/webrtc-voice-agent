@@ -41,7 +41,7 @@ func NewTTS(cfg config.VolcTTSConfig, logger *slog.Logger) *TTS {
 func (t *TTS) Name() string { return "volc-doubao-tts" }
 
 func (t *TTS) Ready() bool {
-	return t.cfg.BaseURL != "" && t.cfg.AccessToken != "" && t.cfg.AppID != "" && t.cfg.ResourceID != "" && t.cfg.Cluster != "" && t.cfg.VoiceType != ""
+	return t.cfg.BaseURL != "" && t.cfg.AccessToken != "" && t.cfg.AppID != "" && t.cfg.Cluster != "" && t.cfg.VoiceType != ""
 }
 
 func (t *TTS) Synthesize(ctx context.Context, req adapters.SynthesisRequest) (<-chan adapters.TTSEvent, error) {
@@ -84,8 +84,6 @@ func (t *TTS) Synthesize(ctx context.Context, req adapters.SynthesisRequest) (<-
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer;"+t.cfg.AccessToken)
-	httpReq.Header.Set("Resource-Id", t.cfg.ResourceID)
-	httpReq.Header.Set("X-Api-Resource-Id", t.cfg.ResourceID)
 	t.logger.Info(
 		"volc tts request started",
 		"session_id", req.SessionID,
@@ -95,7 +93,6 @@ func (t *TTS) Synthesize(ctx context.Context, req adapters.SynthesisRequest) (<-
 		"voice_type", t.cfg.VoiceType,
 		"encoding", t.cfg.Encoding,
 		"sample_rate", t.cfg.SampleRate,
-		"resource_id", t.cfg.ResourceID,
 		"cluster", t.cfg.Cluster,
 	)
 
