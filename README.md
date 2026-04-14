@@ -1,5 +1,11 @@
 # WebRTC AI Voice Agent
 
+## Demo
+
+![Demo Placeholder](./docs/assets/demo-placeholder.svg)
+
+演示录屏占位。后续可在此位置替换为实际录屏链接、GIF 或视频封面。
+
 ## 1. 项目概述
 
 `WebRTC AI Voice Agent` 是一个面向实时语音交互场景的工程化示例项目，重点覆盖 WebRTC 媒体链路、会话编排、流式 AI 调用、工具调用以及业务闭环等关键能力。
@@ -128,6 +134,7 @@
 - `ASR -> LLM -> TTS` 流式回复运行时
 - Provider Adapter 机制与真实 provider 接入
 - 酒店库存查询、预订、结束通话 tool
+- 酒店库存与预订展示页面
 - SessionManager / SessionTask / response runtime 核心骨架
 
 当前版本的重点在于建立清晰、可扩展、可验证的实时语音 Agent 工程边界。后续演进方向见 [docs/roadmap.md](./docs/roadmap.md)。
@@ -207,13 +214,11 @@ make run-web
 ## 12. Roadmap 摘要
 
 - `1.0`
-  建立实时语音 Agent 的基础工程边界与核心链路。
+  完成实时语音 Agent 基础工程边界、核心链路与酒店演示页面。
 - `1.1`
-  强化语音质量、VAD、异常恢复与运行稳定性。
+  完善语音质量、VAD、异常恢复与运行稳定性。
 - `1.2`
-  完善酒店演示场景与运营展示能力。
-- `1.3`
-  增强可观测性、调试能力与测试覆盖。
+  优化房型推荐、无房替代与端到端演示稳定性。
 - `2.0`
   面向生产运行时补齐 TURN、多实例路由、追踪与容错能力。
 

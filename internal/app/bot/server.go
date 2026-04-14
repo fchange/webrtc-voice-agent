@@ -12,14 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
+	"github.com/fchange/webrtc-voice-agent/internal/hotel"
+	"github.com/fchange/webrtc-voice-agent/internal/observability"
+	protoerrors "github.com/fchange/webrtc-voice-agent/internal/protocol/errors"
+	"github.com/fchange/webrtc-voice-agent/internal/protocol/signaling"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 	"github.com/gorilla/websocket"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/hotel"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/observability"
-	protoerrors "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/errors"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
 type Dependencies struct {

@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/app/signal"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/logging"
+	"github.com/fchange/webrtc-voice-agent/internal/app/signal"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
+	"github.com/fchange/webrtc-voice-agent/internal/logging"
 )
 
 func main() {

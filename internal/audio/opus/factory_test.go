@@ -3,7 +3,7 @@ package opus
 import (
 	"testing"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
 )
 
 func TestFactoryDefaultsToBrowserOpusLayout(t *testing.T) {

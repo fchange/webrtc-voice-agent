@@ -1,4 +1,4 @@
-module github.com/webrtc-voice-bot/webrtc-voice-bot
+module github.com/fchange/webrtc-voice-agent
 
 go 1.24.0
 

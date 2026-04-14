@@ -30,7 +30,7 @@ load_env_file() {
 
 load_env_file "$ROOT_DIR/.env.local"
 
-export GOCACHE="${GOCACHE:-/tmp/webrtc-voice-bot-gocache}"
+export GOCACHE="${GOCACHE:-/tmp/webrtc-voice-agent-gocache}"
 export SIGNAL_ADDR="${SIGNAL_ADDR:-:8080}"
 export SIGNAL_PUBLIC_WS_URL="${SIGNAL_PUBLIC_WS_URL:-ws://localhost:8080/ws}"
 export SIGNAL_DEV_TOKEN="${SIGNAL_DEV_TOKEN:-dev-token}"
@@ -96,7 +96,7 @@ wait_for_http() {
   return 1
 }
 
-printf 'Starting WebRTC Voice Bot dev stack\n'
+printf 'Starting WebRTC AI Voice Agent dev stack\n'
 printf '  signal: %s\n' "$SIGNAL_ADDR"
 printf '  bot:    %s\n' "$BOT_ADDR"
 printf '  web:    %s\n' "${WEB_DEV_URL:-http://localhost:5173}"

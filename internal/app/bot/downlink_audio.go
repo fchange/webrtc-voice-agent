@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
 )
 
 const (

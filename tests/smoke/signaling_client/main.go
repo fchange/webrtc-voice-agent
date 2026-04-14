@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/protocol/signaling"
 	"github.com/gorilla/websocket"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
 )
 
 func main() {

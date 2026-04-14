@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
 )
 
 func TestReadStreamHandlesSSEChunks(t *testing.T) {

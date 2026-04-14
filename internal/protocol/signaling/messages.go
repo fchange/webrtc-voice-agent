@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	protoerrors "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/errors"
+	protoerrors "github.com/fchange/webrtc-voice-agent/internal/protocol/errors"
 )
 
 const Version = "v1alpha1"

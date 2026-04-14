@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/hotel"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/hotel"
 )
 
 type hotelInventoryLLM struct {

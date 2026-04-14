@@ -3,7 +3,7 @@ package signal
 import (
 	"testing"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
+	"github.com/fchange/webrtc-voice-agent/internal/protocol/signaling"
 )
 
 func TestHubRelayToAttachedPeer(t *testing.T) {

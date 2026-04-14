@@ -1,5 +1,5 @@
 {
-  "name": "webrtc-voice-bot",
+  "name": "webrtc-voice-agent",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {

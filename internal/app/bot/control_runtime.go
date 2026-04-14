@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	dcproto "github.com/fchange/webrtc-voice-agent/internal/protocol/datachannel"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 	"github.com/pion/webrtc/v4"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
 type controlRuntime struct {

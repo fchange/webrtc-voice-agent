@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/protocol/signaling"
 	"github.com/gorilla/websocket"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
 )
 
 const maxPendingMessages = 16

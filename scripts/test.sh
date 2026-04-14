@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export GOCACHE="${GOCACHE:-/tmp/webrtc-voice-bot-gocache}"
+export GOCACHE="${GOCACHE:-/tmp/webrtc-voice-agent-gocache}"
 
 go test ./...

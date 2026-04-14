@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
 )
 
 func TestFrameHasSpeech(t *testing.T) {

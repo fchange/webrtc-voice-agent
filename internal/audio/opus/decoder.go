@@ -3,8 +3,8 @@ package opus
 import (
 	"fmt"
 
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
 	godepsopus "github.com/godeps/opus"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
 )
 
 const (

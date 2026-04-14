@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/openaicompat"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/hotel"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters/openaicompat"
+	"github.com/fchange/webrtc-voice-agent/internal/hotel"
 )
 
 func withHotelLLMCapabilities(provider adapters.LLMAdapter, store *hotel.Store) adapters.LLMAdapter {

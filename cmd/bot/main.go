@@ -3,16 +3,16 @@ package main
 import (
 	"log"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/mock"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/openaicompat"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/volc"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/xfyun"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/app/bot"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/logging"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/observability"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters/mock"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters/openaicompat"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters/volc"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters/xfyun"
+	"github.com/fchange/webrtc-voice-agent/internal/app/bot"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
+	"github.com/fchange/webrtc-voice-agent/internal/logging"
+	"github.com/fchange/webrtc-voice-agent/internal/observability"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 )
 
 func main() {

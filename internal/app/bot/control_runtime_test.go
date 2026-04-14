@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	dcproto "github.com/fchange/webrtc-voice-agent/internal/protocol/datachannel"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 )
 
 func TestControlRuntimeInterruptHintPromotesInterrupt(t *testing.T) {

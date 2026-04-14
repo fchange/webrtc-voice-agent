@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/adapters/mock"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
+	dcproto "github.com/fchange/webrtc-voice-agent/internal/protocol/datachannel"
+	"github.com/fchange/webrtc-voice-agent/internal/protocol/signaling"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 	"github.com/pion/webrtc/v4"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters/mock"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
-	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
 type captureWriter struct {

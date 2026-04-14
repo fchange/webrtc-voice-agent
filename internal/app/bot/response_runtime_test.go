@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
-	dcproto "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/datachannel"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
+	dcproto "github.com/fchange/webrtc-voice-agent/internal/protocol/datachannel"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 )
 
 type testLLM struct {

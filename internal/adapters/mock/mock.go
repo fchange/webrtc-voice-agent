@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
 )
 
 type ProviderBundle struct {

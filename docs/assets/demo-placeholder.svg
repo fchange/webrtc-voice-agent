@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Demo Placeholder</title>
+  <desc id="desc">Placeholder panel for the future demo recording of WebRTC AI Voice Agent.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1f2937"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0b1220"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect x="80" y="72" width="1120" height="576" rx="28" fill="url(#card)" stroke="#334155" stroke-width="2"/>
+  <rect x="112" y="108" width="1056" height="56" rx="14" fill="#111827" stroke="#1e293b"/>
+  <circle cx="150" cy="136" r="8" fill="#ef4444"/>
+  <circle cx="178" cy="136" r="8" fill="#f59e0b"/>
+  <circle cx="206" cy="136" r="8" fill="#22c55e"/>
+  <text x="112" y="242" fill="#e5e7eb" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700">Demo Recording Placeholder</text>
+  <text x="112" y="304" fill="#94a3b8" font-family="Arial, Helvetica, sans-serif" font-size="28">WebRTC AI Voice Agent</text>
+  <text x="112" y="356" fill="#94a3b8" font-family="Arial, Helvetica, sans-serif" font-size="24">Replace this image with a demo video cover, GIF, or linked recording.</text>
+  <circle cx="640" cy="470" r="78" fill="#2563eb" opacity="0.92"/>
+  <polygon points="622,432 622,508 684,470" fill="#f8fafc"/>
+  <rect x="112" y="562" width="300" height="34" rx="17" fill="#0f766e"/>
+  <text x="132" y="585" fill="#ecfeff" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Realtime Voice Demo</text>
+</svg>

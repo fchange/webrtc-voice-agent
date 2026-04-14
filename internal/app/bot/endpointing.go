@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
 )
 
 type endpointingCallbacks struct {

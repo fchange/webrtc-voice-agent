@@ -6,14 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
+	opusaudio "github.com/fchange/webrtc-voice-agent/internal/audio/opus"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
+	"github.com/fchange/webrtc-voice-agent/internal/protocol/signaling"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
-	opusaudio "github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio/opus"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/protocol/signaling"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
 )
 
 type signalWriter interface {

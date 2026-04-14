@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/audio"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/session"
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/audio"
+	"github.com/fchange/webrtc-voice-agent/internal/session"
 )
 
 type transcriptEmitter interface {

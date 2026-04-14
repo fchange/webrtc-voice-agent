@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fchange/webrtc-voice-agent/internal/adapters"
+	"github.com/fchange/webrtc-voice-agent/internal/config"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/adapters"
-	"github.com/webrtc-voice-bot/webrtc-voice-bot/internal/config"
 )
 
 type ASR struct {
