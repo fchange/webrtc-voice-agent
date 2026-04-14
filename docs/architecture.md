@@ -2,12 +2,21 @@
 
 ## High-level Model
 
-系统采用单机多进程 monorepo：
+系统采用单机多进程 monorepo，这个边界的目标不是“拆服务而拆服务”，而是把实时语音 Agent 中最容易混在一起的几类职责强制分开：
 
 - `apps/web`: Web 客户端，负责麦克风、PeerConnection、DataChannel 和 UI 状态展示
 - `cmd/signal`: Signaling 进程，负责鉴权、创建会话、SDP / ICE 中继、session 与 bot 的路由
 - `cmd/bot`: Bot 进程，负责 WebRTC 终端、音频流接入、SessionTask 编排和 adapter 调用
 - 规划中的酒店 demo 业务服务: 提供房型库存与预订能力，供 bot tool 层和运营展示页复用
+
+这套拆分使项目可以同时展示：
+
+- WebRTC 实时媒体处理能力
+- 自定义 signaling 设计能力
+- DataChannel 控制面设计能力
+- 流式 AI 编排能力
+- tool-driven 业务闭环能力
+- provider adapter 插件式架构能力
 
 ## Why This Boundary
 
@@ -16,6 +25,13 @@
 - SessionTask 作为每个会话的最小调度单元，避免过早引入全局大调度器
 - provider 通过 adapter 接口进入，避免 ASR / LLM / TTS 反向污染 session 编排
 - 酒店库存与预订属于独立业务事实源，不直接写死在 prompt 或前端 UI
+
+进一步说，这个边界让系统具备几个更适合展示的特性：
+
+- signaling 可以独立演进协议，不影响 bot 会话逻辑
+- bot 可以独立演进 provider、状态机和 tool routing
+- 业务服务可以独立演进事实模型，而不是绑死在 prompt 中
+- 前端可以把 DataChannel 事件直接可视化，作为调试和演示界面
 
 ## Process Model
 
@@ -57,6 +73,14 @@
 9. 当 LLM 需要业务事实时，通过 tool 层读取库存或发起预订
 10. Bot 音频通过 WebRTC track 下行至 Web
 
+这个流程体现的是“媒体流、控制流、业务事实流”三条链路并行但不混杂：
+
+- 媒体流走 WebRTC track
+- 控制流走 DataChannel
+- 业务事实流走 tool + 内部服务
+
+这也是项目比较适合作为作品集展示的地方，因为它不是单线程线性调用，而是显式建模了多种流。
+
 ## VAD Placement
 
 - 服务端 VAD 是权威事实源
@@ -80,6 +104,32 @@
 - LLM 输出尽量流式进入 TTS
 - TTS 音频 chunk 流式下行
 - interrupt 到来时先 cancel 当前 TTS，再取消本轮未完成下游任务
+
+这条流式链路当前可概括为：
+
+`WebRTC ingress -> endpointing -> decoder -> ASR -> LLM stream -> punctuation segmenter -> TTS -> WebRTC downlink`
+
+它的价值不是“模型接起来了”，而是：
+
+- 明确哪些节点是实时敏感路径
+- 明确哪些节点可以替换 provider
+- 明确 interrupt 时应该取消哪一段任务
+- 明确如何在流式回复里做渐进式披露和 tool 调用
+
+## Progressive Disclosure And Tools
+
+当前酒店 demo 不是让模型“直接回答一个预订结果”，而是通过工具逐步拿事实：
+
+- `list_room_types`: 查询实时房型与库存
+- `create_reservation`: 在信息完备时创建预订
+- `end_call`: 显式声明“当前回复播完后结束通话”
+
+这样做有几个好处：
+
+- 避免在未查库存前承诺“有房”
+- 避免在未写入预订结果前承诺“预订成功”
+- 将结束通话从关键词猜测升级为显式控制意图
+- 让 LLM 能力按任务需要逐步披露，而不是一次性暴露全部控制权
 
 ## Future Evolution
 
