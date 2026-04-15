@@ -5,8 +5,6 @@
 [![Demo Preview](./docs/assets/demo-poster.png)](./docs/assets/demo.mp4)
 
 - 点击上方预览可查看完整演示视频：[demo.mp4](./docs/assets/demo.mp4)
-- 该演示展示了当前仓库中的酒店电话预订语音 Agent 流程
-- 如需原始录屏文件，仓库中仍保留：[录屏2026-04-15 17.05.10.mov](<./录屏2026-04-15 17.05.10.mov>)
 
 ## 1. 项目概述
 
