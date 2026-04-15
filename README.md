@@ -2,9 +2,10 @@
 
 ## Demo
 
-[![Demo Preview](./docs/assets/demo-poster.png)](./docs/assets/demo.mp4)
 
-- 点击上方预览可查看完整演示视频：[demo.mp4](./docs/assets/demo.mp4)
+https://github.com/user-attachments/assets/7c4081b0-73c3-414b-b022-b07f6256a6f8
+
+
 
 ## 1. 项目概述
 
