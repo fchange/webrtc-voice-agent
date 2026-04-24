@@ -2,16 +2,16 @@
 
 ## Decision
 
-本项目采用“双层设计，服务端裁决”：
+本项目采用「双层设计，服务端裁决」：
 
-- 服务端 VAD / endpointing: 必做，且是权威来源
-- 客户端 VAD: 可做，但只用于 UI 与 interrupt hint
+- 服务端 VAD / endpointing：必做，且为权威来源
+- 客户端 VAD：可做，仅用于 UI 与 interrupt hint
 
 ## Why
 
-- turn 切分本质上属于 session 编排，不属于浏览器 UI
-- interrupt、cancel、TTS stop、ASR finalization 都依赖统一裁决
-- provider timeout、误切分、弱网与回放调试都需要服务端事实源
+- turn 切分属于 session 编排职责，不属于浏览器 UI
+- interrupt、cancel、TTS stop、ASR finalization 依赖统一裁决
+- provider timeout、误切分、弱网与回放调试依赖服务端事实源
 
 ## MVP Strategy
 
@@ -20,24 +20,24 @@
 - 客户端持续上行音频
 - bot 执行服务端 endpointing
 - bot 发送 `vad.started / vad.stopped / turn.end_of_utterance`
-- 客户端只展示 speaking meter
+- 客户端展示 speaking meter
 
-当前代码状态补充：
+当前代码状态：
 
 - 已接入服务端 packet-activity endpointing placeholder
-- 它基于上行 RTP 包活动和静默超时发事件
-- 它不是最终形态的 PCM / feature-based VAD
-- 它的职责是先把服务端权威 turn 切分链路跑起来
-- 上行音频已先进入统一的 codec-aware encoded packet ingress stream
-- decoder 后的 PCM 已可继续接到流式 ASR
-- 当前 Opus 解码已切到更接近浏览器 WebRTC 实流的 WASM libopus 后端
-- 下一步重点是用真实 PCM VAD 替换当前 packet-activity heuristic，而不是重做音频接入层
+- 基于上行 RTP 包活动与静默超时发出事件
+- 当前实现属于过渡形态，区别于最终 PCM / feature-based VAD
+- 职责是先打通服务端权威 turn 切分链路
+- 上行音频先进入统一的 codec-aware encoded packet ingress stream
+- decoder 后的 PCM 已接入流式 ASR
+- Opus 解码切换至 WASM libopus 后端，贴近浏览器 WebRTC 实流
+- 下一步重点为使用真实 PCM VAD 替换 packet-activity heuristic，音频接入层保持不变
 
 ### Phase 2
 
 - 客户端增加本地 VAD
-- 在 bot speaking 期间，客户端可快速发送 `turn.interrupt_hint`
-- bot 基于服务端音频与 VAD 状态决定是否升级为 `turn.interrupt`
+- bot speaking 期间，客户端可发送 `turn.interrupt_hint`
+- bot 基于服务端音频与 VAD 状态判定是否升级为 `turn.interrupt`
 
 ## Recommended Streaming Pipeline
 
@@ -45,7 +45,7 @@
 2. bot 重采样 / 分帧
 3. 服务端 VAD 识别语音段边界
 4. 音频段推进流式 ASR
-5. ASR partial 主要用于 UI
+5. ASR partial 用于 UI
 6. ASR stable / final 推进 LLM
 7. LLM token stream 推进 TTS
 8. TTS audio chunk 流式回推客户端
@@ -53,7 +53,7 @@
 
 ## Automatic Barge-In Sequence
 
-当 bot 正在说话时，用户再次开口的推荐时序如下：
+当 bot 正在说话时，用户再次开口的时序如下：
 
 ```mermaid
 sequenceDiagram
@@ -102,16 +102,16 @@ sequenceDiagram
 实现约束：
 
 - `responding` 状态下检测到用户重新开口时，必须先切断旧 turn，再创建 next turn
-- 不允许把插话语音继续记到旧 turn
+- 禁止将插话语音继续记到旧 turn
 - 被 interrupt 的回复链不得继续 emit `turn.completed`
-- 客户端 local VAD 只用于加速 hint，最终裁决依旧在服务端
+- 客户端 local VAD 仅用于加速 hint，最终裁决由服务端执行
 
 ## Rules
 
 - 客户端不得单方面认定 turn 已结束
 - 客户端不得单方面认定 interrupt 已成立
-- 服务端可根据 VAD、bot speaking 状态、会话状态做最终裁决
-- `turn.end_of_utterance` 只能由服务端产生
+- 服务端基于 VAD、bot speaking 状态、会话状态执行最终裁决
+- `turn.end_of_utterance` 仅由服务端产生
 
 ## Future Work
 

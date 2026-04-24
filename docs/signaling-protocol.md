@@ -11,7 +11,7 @@
 
 - `POST /v1/sessions` 使用 `Authorization: Bearer <token>`
 - `GET /ws` 在 MVP 阶段使用查询参数 `access_token`
-- 后续可替换为短期 session token；Phase 0 不做复杂鉴权系统
+- 后续可替换为短期 session token；Phase 0 不引入复杂鉴权系统
 
 ## Message Envelope
 
@@ -47,8 +47,8 @@
 
 ## Design Rules
 
-- signal 不解释媒体语义，只转发协商消息
+- signal 不解释媒体语义，仅转发协商消息
 - signaling 必须携带 `session_id`
 - 错误必须落到标准错误码
-- 协议新增字段优先向后兼容
-- signal 可以做 session 到 bot 的映射，但不做 turn 级业务编排
+- 协议新增字段优先保持向后兼容
+- signal 可执行 session 到 bot 的映射，但不承担 turn 级业务编排
